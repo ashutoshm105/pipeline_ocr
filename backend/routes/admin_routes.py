@@ -5,6 +5,7 @@ Extracted verbatim from ``main.py``:
   GET      /api/notifications | PUT /api/notifications/{id}/read | PUT /api/notifications/read-all
   GET      /api/drug-interactions | GET /api/drug-interactions/check
   GET      /api/icd10
+  GET      /api/education
   GET/POST /api/templates | DELETE /api/templates/{id}
   GET      /api/audit-log
   GET      /api/analytics
@@ -141,6 +142,22 @@ def search_icd10(q: str = Query("")):
         ).fetchall()
     else:
         rows = conn.execute("SELECT * FROM icd10_codes ORDER BY code LIMIT 50").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ── Patient Education Library ───────────────────────────────
+
+@router.get("/api/education")
+def list_education(condition: str = Query("")):
+    conn = get_db()
+    if condition:
+        rows = conn.execute(
+            "SELECT * FROM education_resources WHERE condition_tag=? OR condition_tag='' ORDER BY category, title",
+            (condition,),
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM education_resources ORDER BY category, title").fetchall()
     conn.close()
     return [dict(r) for r in rows]
 

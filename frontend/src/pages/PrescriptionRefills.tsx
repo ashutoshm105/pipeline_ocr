@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import * as api from "../api";
 
 interface Props {
   onBack: () => void;
@@ -64,13 +65,22 @@ interface PriorAuth {
   notes: string;
 }
 
-const MOCK_REQUESTS: RefillRequest[] = [
-  { id: "RR1", patient: "James Wilson", medication: "Lisinopril", dose: "10mg", pharmacy: "CVS Pharmacy #4521", dateRequested: "2026-07-07", urgency: "routine", status: "pending" },
-  { id: "RR2", patient: "Maria Santos", medication: "Metformin", dose: "500mg", pharmacy: "Walgreens #1892", dateRequested: "2026-07-07", urgency: "urgent", status: "pending" },
-  { id: "RR3", patient: "David Chen", medication: "Atorvastatin", dose: "20mg", pharmacy: "Rite Aid #0332", dateRequested: "2026-07-06", urgency: "routine", status: "pending" },
-  { id: "RR4", patient: "Sarah Johnson", medication: "Omeprazole", dose: "40mg", pharmacy: "Costco Pharmacy", dateRequested: "2026-07-06", urgency: "stat", status: "pending" },
-  { id: "RR5", patient: "Robert Kim", medication: "Amlodipine", dose: "5mg", pharmacy: "Walmart Pharmacy #7201", dateRequested: "2026-07-05", urgency: "routine", status: "pending" },
-];
+// Maps a `prescription_refills` API row onto the queue's display shape.
+// The backend table only tracks id/prescription_id/patient_id/status/requested_at/
+// fulfilled_at/notes — medication/dose/pharmacy/urgency aren't stored, so those
+// fields fall back to placeholders until the schema grows to carry them.
+function mapRefillRow(row: any): RefillRequest {
+  return {
+    id: row.id,
+    patient: row.patient_id,
+    medication: row.notes || `Prescription ${String(row.prescription_id).slice(0, 8)}`,
+    dose: "",
+    pharmacy: "",
+    dateRequested: row.requested_at ? String(row.requested_at).slice(0, 10) : "",
+    urgency: "routine",
+    status: row.status === "requested" ? "pending" : (row.status as RefillRequest["status"]),
+  };
+}
 
 const MOCK_PHARMACIES: Pharmacy[] = [
   { id: "P1", name: "CVS Pharmacy #4521", address: "1234 Main St, Springfield, IL 62701", phone: "(217) 555-0142", fax: "(217) 555-0143", hours: "Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm" },
@@ -173,7 +183,8 @@ const IconSearch = () => (
 
 export function PrescriptionRefills({ onBack, notify }: Props) {
   const [tab, setTab] = useState<Tab>("queue");
-  const [requests, setRequests] = useState<RefillRequest[]>(MOCK_REQUESTS);
+  const [requests, setRequests] = useState<RefillRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(true);
   const [autoRules, setAutoRules] = useState<AutoRefillRule[]>([
     { id: "AR1", medication: "Lisinopril 10mg", patient: "James Wilson", maxRefills: 6, intervalDays: 30, expiry: "2027-01-01", enabled: true },
     { id: "AR2", medication: "Metformin 500mg", patient: "Maria Santos", maxRefills: 12, intervalDays: 30, expiry: "2027-06-15", enabled: true },
@@ -206,6 +217,18 @@ export function PrescriptionRefills({ onBack, notify }: Props) {
 
   const pendingRequests = requests.filter(r => r.status === "pending");
 
+  const loadRequests = () => {
+    setLoadingRequests(true);
+    api.listRefills()
+      .then(rows => setRequests(rows.map(mapRefillRow)))
+      .catch(() => notify("Failed to load refill requests", "error"))
+      .finally(() => setLoadingRequests(false));
+  };
+
+  useEffect(() => {
+    loadRequests();
+  }, []);
+
   const handleRequestAction = (id: string, action: "approved" | "denied" | "modify" | "contact") => {
     if (action === "modify") {
       notify("Modification form opened for request " + id, "success");
@@ -215,8 +238,12 @@ export function PrescriptionRefills({ onBack, notify }: Props) {
       notify("Contacting patient for request " + id, "success");
       return;
     }
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status: action } : r));
-    notify(`Refill request ${id} ${action}`, "success");
+    api.updateRefillStatus(id, action)
+      .then(() => {
+        setRequests(prev => prev.map(r => r.id === id ? { ...r, status: action } : r));
+        notify(`Refill request ${id} ${action}`, "success");
+      })
+      .catch(() => notify("Failed to update refill request", "error"));
   };
 
   const handleEprescribe = () => {
@@ -299,7 +326,8 @@ export function PrescriptionRefills({ onBack, notify }: Props) {
       {tab === "queue" && (
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Pending Refill Requests ({pendingRequests.length})</h2>
-          {pendingRequests.length === 0 && <div className="neu" style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>No pending requests</div>}
+          {loadingRequests && <div className="neu" style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>Loading...</div>}
+          {!loadingRequests && pendingRequests.length === 0 && <div className="neu" style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>No pending requests</div>}
           {pendingRequests.map(r => (
             <div key={r.id} className="neu" style={{ padding: 16, marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>

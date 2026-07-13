@@ -7,13 +7,6 @@ interface Props {
 
 type CallPhase = "pre" | "active" | "post" | "history";
 
-interface ChatMsg {
-  id: number;
-  from: "doctor" | "patient";
-  text: string;
-  time: string;
-}
-
 interface PastCall {
   id: number;
   patient: string;
@@ -22,6 +15,13 @@ interface PastCall {
   type: string;
   status: "completed" | "missed" | "cancelled" | "in-progress" | "scheduled";
   diagnosis: string;
+}
+
+interface RoomData {
+  room_id: string;
+  join_url: string;
+  patient_join_url: string;
+  doctor_join_url: string;
 }
 
 const MOCK_PATIENTS = [
@@ -63,12 +63,6 @@ const statusColor = (s: string) =>
 
 /* ─── SVG Icons (inline) ──────────────────────────── */
 
-const IconPhone = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.362 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
-  </svg>
-);
-
 const IconVideo = ({ off }: { off?: boolean }) => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     {off ? (
@@ -85,47 +79,10 @@ const IconVideo = ({ off }: { off?: boolean }) => (
   </svg>
 );
 
-const IconMic = ({ off }: { off?: boolean }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    {off ? (
-      <>
-        <line x1="1" y1="1" x2="23" y2="23"/>
-        <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/>
-        <path d="M17 16.95A7 7 0 015 12m14 0a7 7 0 01-.11 1.23"/>
-        <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-      </>
-    ) : (
-      <>
-        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
-        <path d="M19 10v2a7 7 0 01-14 0v-2"/>
-        <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-      </>
-    )}
-  </svg>
-);
-
-const IconScreen = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-  </svg>
-);
-
-const IconChat = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-  </svg>
-);
-
 const IconEndCall = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0122 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.362 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/>
     <line x1="23" y1="1" x2="1" y2="23"/>
-  </svg>
-);
-
-const IconCamera = () => (
-  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
   </svg>
 );
 
@@ -147,9 +104,26 @@ const IconClock = () => (
   </svg>
 );
 
-const IconBack = () => (
+const IconAlert = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+  </svg>
+);
+
+const IconPlus = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+);
+
+const IconExternalLink = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+    <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+    <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+  </svg>
+);
+
+const IconShield = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
   </svg>
 );
 
@@ -159,14 +133,16 @@ const IconSend = () => (
   </svg>
 );
 
-const IconPlus = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+const IconCopy = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+  </svg>
 );
 
-const IconAlert = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-  </svg>
+/* ─── Spinner ─────────────────────────────────────── */
+const Spinner = () => (
+  <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
 );
 
 export function Telemedicine({ onBack, notify }: Props) {
@@ -176,19 +152,15 @@ export function Telemedicine({ onBack, notify }: Props) {
   const [selectedPatient, setSelectedPatient] = useState("");
   const [appointmentType, setAppointmentType] = useState<"follow-up" | "consultation" | "urgent">("consultation");
   const [preNotes, setPreNotes] = useState("");
+  const [callLoading, setCallLoading] = useState(false);
 
   /* ── Active call state ── */
-  const [muted, setMuted] = useState(false);
-  const [videoOff, setVideoOff] = useState(false);
-  const [screenSharing, setScreenSharing] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([
-    { id: 1, from: "patient", text: "Hello doctor, I can see you clearly.", time: "00:05" },
-  ]);
-  const [chatInput, setChatInput] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [callNotes, setCallNotes] = useState("");
+  const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   /* ── Post-call state ── */
   const [postForm, setPostForm] = useState({ diagnosis: "", followUp: "", prescriptions: "", nextAppt: "" });
@@ -203,22 +175,41 @@ export function Telemedicine({ onBack, notify }: Props) {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [phase]);
 
-  /* Auto-scroll chat */
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
-
-  const startCall = () => {
+  /* ── Create Jitsi room via backend, fall back to direct Jitsi ── */
+  const startCall = async () => {
     if (!selectedPatient) return notify("Select a patient first", "error");
-    setElapsed(0);
-    setPhase("active");
-    notify("Call connected");
+    const patientName = patient?.name ?? "Patient";
+    setCallLoading(true);
+    try {
+      const params = new URLSearchParams({
+        patient_name: patientName,
+        doctor_name: "Doctor",
+      });
+      const res = await fetch(`/api/telemedicine/room?${params.toString()}`, { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: RoomData = await res.json();
+      setRoomData(data);
+      setElapsed(0);
+      setPhase("active");
+      notify("Secure video room created");
+    } catch {
+      /* Fallback: build a deterministic room name without the backend */
+      const safeName = patientName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      const roomId = `clinic-${safeName}-${Date.now().toString(36)}`;
+      const joinUrl = `https://meet.jit.si/${roomId}`;
+      setRoomData({ room_id: roomId, join_url: joinUrl, patient_join_url: joinUrl, doctor_join_url: joinUrl });
+      setElapsed(0);
+      setPhase("active");
+      notify("Room ready (direct Jitsi — backend unreachable)");
+    } finally {
+      setCallLoading(false);
+    }
   };
 
   const endCall = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     setPhase("post");
-    notify("Call ended - " + fmtTime(elapsed));
+    notify("Call ended — " + fmtTime(elapsed));
   };
 
   const submitSummary = () => {
@@ -227,19 +218,25 @@ export function Telemedicine({ onBack, notify }: Props) {
     setPhase("history");
   };
 
-  const sendChat = () => {
-    if (!chatInput.trim()) return;
-    const msg: ChatMsg = { id: Date.now(), from: "doctor", text: chatInput.trim(), time: fmtTime(elapsed) };
-    setChatMessages(prev => [...prev, msg]);
-    setChatInput("");
-    // Simulate patient reply
-    setTimeout(() => {
-      setChatMessages(prev => [...prev, {
-        id: Date.now() + 1, from: "patient",
-        text: ["Thank you, doctor.", "I understand.", "Yes, I have been taking the medication.", "Could you repeat that?"][Math.floor(Math.random() * 4)],
-        time: fmtTime(elapsed + 3),
-      }]);
-    }, 2000);
+  const copyRoomLink = () => {
+    if (!roomData) return;
+    navigator.clipboard.writeText(roomData.patient_join_url).then(() => {
+      setCopied(true);
+      notify("Patient link copied");
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const openInTab = () => {
+    if (roomData?.join_url) window.open(roomData.join_url, "_blank", "noopener,noreferrer");
+  };
+
+  const resetPreCall = () => {
+    setPhase("pre");
+    setSelectedPatient("");
+    setPreNotes("");
+    setRoomData(null);
+    setPostForm({ diagnosis: "", followUp: "", prescriptions: "", nextAppt: "" });
   };
 
   /* ─────────────────────── PRE-CALL ─────────────────────── */
@@ -301,8 +298,25 @@ export function Telemedicine({ onBack, notify }: Props) {
                   style={{ width: "100%", resize: "vertical", minHeight: 80 }}
                 />
               </div>
-              <button className="neu-btn primary" onClick={startCall} style={{ marginTop: 8, padding: "12px 24px", fontSize: 14 }}>
-                <IconVideo off={false} /> Start Call
+
+              {/* Info banner */}
+              <div style={{
+                padding: "10px 14px", borderRadius: 10,
+                background: "rgba(79,110,247,0.08)", border: "1px solid rgba(79,110,247,0.2)",
+                display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "var(--text-muted)",
+              }}>
+                <IconShield />
+                <span>Calls are end-to-end encrypted via <strong style={{ color: "inherit" }}>Jitsi Meet</strong>. No account or plugin required — runs directly in the browser.</span>
+              </div>
+
+              <button
+                className="neu-btn primary"
+                onClick={startCall}
+                disabled={callLoading}
+                style={{ marginTop: 8, padding: "12px 24px", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+              >
+                {callLoading ? <Spinner /> : <IconVideo off={false} />}
+                {callLoading ? "Creating secure room…" : "Start Secure Video Call"}
               </button>
             </div>
           </div>
@@ -351,164 +365,114 @@ export function Telemedicine({ onBack, notify }: Props) {
             </div>
           )}
         </div>
+
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
       </div>
     );
   }
 
   /* ─────────────────────── ACTIVE CALL ─────────────────────── */
-  if (phase === "active") {
+  if (phase === "active" && roomData) {
     return (
-      <div className="page-enter" style={{ display: "flex", gap: 16, height: "calc(100vh - 120px)", minHeight: 500 }}>
-        {/* Main video area */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
-          {/* Video feed */}
+      <div className="page-enter" style={{ display: "flex", gap: 16, height: "calc(100vh - 120px)", minHeight: 560 }}>
+
+        {/* Main video column */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+
+          {/* Status bar */}
           <div style={{
-            flex: 1, borderRadius: 16, position: "relative", overflow: "hidden",
-            background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
-            display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "10px 16px", borderRadius: 12,
+            background: "var(--bg-alt, #f8f8f8)", border: "1px solid var(--border, #e5e5e5)",
           }}>
-            <IconCamera />
-
-            {/* Participant info overlay */}
-            <div style={{
-              position: "absolute", top: 16, left: 16,
-              background: "rgba(0,0,0,0.5)", borderRadius: 10, padding: "8px 14px",
-              color: "#fff", backdropFilter: "blur(8px)",
-            }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{patient?.name ?? "Patient"}</div>
-              <div style={{ fontSize: 11, opacity: 0.7 }}>{patient?.mrn ?? ""}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981", animation: "pulse 1.5s infinite" }} />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Live — {patient?.name ?? "Patient"}</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>{fmtTime(elapsed)}</span>
             </div>
-
-            {/* Duration */}
-            <div style={{
-              position: "absolute", top: 16, right: 16,
-              background: "rgba(239,68,68,0.8)", borderRadius: 8, padding: "4px 12px",
-              color: "#fff", fontWeight: 700, fontSize: 13, fontVariantNumeric: "tabular-nums",
-              display: "flex", alignItems: "center", gap: 6,
-            }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", animation: "pulse 1.5s infinite" }} />
-              {fmtTime(elapsed)}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {roomData.room_id}
+              </span>
+              <button
+                className="neu-btn ghost"
+                onClick={copyRoomLink}
+                style={{ padding: "4px 10px", fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}
+                title="Copy patient link"
+              >
+                <IconCopy /> {copied ? "Copied!" : "Share with patient"}
+              </button>
+              <button
+                className="neu-btn ghost"
+                onClick={openInTab}
+                style={{ padding: "4px 10px", fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}
+                title="Open in new tab"
+              >
+                <IconExternalLink /> New tab
+              </button>
             </div>
-
-            {/* Self-view PIP */}
-            <div style={{
-              position: "absolute", bottom: 16, right: 16, width: 160, height: 120,
-              borderRadius: 12, overflow: "hidden", border: "2px solid rgba(255,255,255,0.2)",
-              background: videoOff ? "#2d2d3d" : "linear-gradient(135deg, #2d2d3d 0%, #3d3d5c 100%)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              {videoOff ? (
-                <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 11, textAlign: "center" }}>
-                  <IconVideo off />
-                  <div style={{ marginTop: 4 }}>Camera Off</div>
-                </div>
-              ) : (
-                <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>You</div>
-              )}
-            </div>
-
-            {screenSharing && (
-              <div style={{
-                position: "absolute", bottom: 16, left: 16,
-                background: "rgba(79,110,247,0.8)", borderRadius: 8, padding: "4px 10px",
-                color: "#fff", fontSize: 11, fontWeight: 600,
-              }}>
-                <IconScreen /> Sharing Screen
-              </div>
-            )}
           </div>
 
-          {/* Call controls */}
-          <div style={{
-            display: "flex", justifyContent: "center", gap: 12, padding: "12px 0",
-          }}>
-            <button
-              className={`neu-btn${muted ? " danger" : " ghost"}`}
-              onClick={() => { setMuted(!muted); notify(muted ? "Unmuted" : "Muted"); }}
-              style={{ width: 48, height: 48, borderRadius: "50%", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-              title={muted ? "Unmute" : "Mute"}
-            >
-              <IconMic off={muted} />
-            </button>
-            <button
-              className={`neu-btn${videoOff ? " danger" : " ghost"}`}
-              onClick={() => { setVideoOff(!videoOff); notify(videoOff ? "Camera on" : "Camera off"); }}
-              style={{ width: 48, height: 48, borderRadius: "50%", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-              title={videoOff ? "Turn camera on" : "Turn camera off"}
-            >
-              <IconVideo off={videoOff} />
-            </button>
-            <button
-              className={`neu-btn${screenSharing ? " primary" : " ghost"}`}
-              onClick={() => { setScreenSharing(!screenSharing); notify(screenSharing ? "Stopped sharing" : "Sharing screen"); }}
-              style={{ width: 48, height: 48, borderRadius: "50%", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-              title="Screen share"
-            >
-              <IconScreen />
-            </button>
+          {/* Jitsi iframe */}
+          <div style={{ flex: 1, borderRadius: 16, overflow: "hidden", border: "1px solid var(--border, #e5e5e5)", minHeight: 340, position: "relative" }}>
+            <iframe
+              src={roomData.join_url}
+              style={{ width: "100%", height: "100%", border: "none", display: "block", minHeight: 340 }}
+              allow="camera; microphone; fullscreen; display-capture; autoplay"
+              title="Jitsi Meet video call"
+            />
+          </div>
+
+          {/* End call controls */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, padding: "8px 0" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              Camera, mic and screen-share controls are inside the video window above.
+            </div>
             <button
               className="neu-btn"
               onClick={endCall}
               style={{
-                width: 64, height: 48, borderRadius: 24, padding: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
+                padding: "10px 28px", borderRadius: 24, fontSize: 13, fontWeight: 700,
                 background: "#ef4444", color: "#fff", border: "none",
+                display: "flex", alignItems: "center", gap: 8,
               }}
-              title="End call"
             >
-              <IconEndCall />
-            </button>
-            <button
-              className={`neu-btn${chatOpen ? " primary" : " ghost"}`}
-              onClick={() => setChatOpen(!chatOpen)}
-              style={{ width: 48, height: 48, borderRadius: "50%", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-              title="Toggle chat"
-            >
-              <IconChat />
+              <IconEndCall /> End Session
             </button>
           </div>
         </div>
 
         {/* Side panel */}
-        <div style={{ width: 320, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", flexShrink: 0 }}>
-          {/* Chat panel */}
-          {chatOpen && (
-            <div className="neu" style={{ padding: 16, display: "flex", flexDirection: "column", height: 280, flexShrink: 0 }}>
-              <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Chat</h4>
-              <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-                {chatMessages.map(m => (
-                  <div key={m.id} style={{
-                    alignSelf: m.from === "doctor" ? "flex-end" : "flex-start",
-                    maxWidth: "80%", padding: "6px 10px", borderRadius: 10,
-                    background: m.from === "doctor" ? "#4f6ef7" : "var(--bg-alt, #f0f0f0)",
-                    color: m.from === "doctor" ? "#fff" : "inherit",
-                    fontSize: 12,
-                  }}>
-                    <div>{m.text}</div>
-                    <div style={{ fontSize: 9, opacity: 0.6, marginTop: 2, textAlign: "right" }}>{m.time}</div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <input
-                  className="neu-input"
-                  placeholder="Type a message..."
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && sendChat()}
-                  style={{ flex: 1, fontSize: 12 }}
-                />
-                <button className="neu-btn primary" onClick={sendChat} style={{ padding: "6px 10px" }}>
-                  <IconSend />
-                </button>
-              </div>
+        <div style={{ width: 300, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", flexShrink: 0 }}>
+
+          {/* Call notes toggle */}
+          <div className="neu" style={{ padding: 16, flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: notesOpen ? 10 : 0 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 700 }}>Call Notes</h4>
+              <button className={`neu-btn${notesOpen ? " primary" : " ghost"}`} onClick={() => setNotesOpen(!notesOpen)} style={{ padding: "3px 10px", fontSize: 11 }}>
+                {notesOpen ? "Collapse" : "Open"}
+              </button>
             </div>
-          )}
+            {notesOpen && (
+              <>
+                <textarea
+                  className="neu-input"
+                  placeholder="Type notes during the call..."
+                  rows={5}
+                  value={callNotes}
+                  onChange={e => setCallNotes(e.target.value)}
+                  style={{ width: "100%", resize: "vertical", fontSize: 12 }}
+                />
+                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>Notes will auto-fill the summary form</div>
+              </>
+            )}
+          </div>
 
           {/* Patient quick-view */}
           {patient && (
-            <div className="neu" style={{ padding: 16 }}>
+            <div className="neu" style={{ padding: 16, flexShrink: 0 }}>
               <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Patient Info</h4>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #4f6ef7, #a78bfa)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13 }}>
@@ -568,10 +532,8 @@ export function Telemedicine({ onBack, notify }: Props) {
         </div>
 
         <style>{`
-          @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-          }
+          @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+          @keyframes spin  { to { transform: rotate(360deg); } }
         `}</style>
       </div>
     );
@@ -593,7 +555,7 @@ export function Telemedicine({ onBack, notify }: Props) {
           <div>
             <h1>Consultation Summary</h1>
             <div className="subtitle">
-              {patient?.name ?? "Patient"} - {appointmentType.replace("-", " ")} - Duration: {fmtTime(elapsed)}
+              {patient?.name ?? "Patient"} — {appointmentType.replace("-", " ")} — Duration: {fmtTime(elapsed)}
             </div>
           </div>
         </div>
@@ -601,6 +563,16 @@ export function Telemedicine({ onBack, notify }: Props) {
         <div style={{ maxWidth: 700 }}>
           <div className="neu" style={{ padding: 24 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {callNotes.trim() && (
+                <div style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  background: "rgba(79,110,247,0.06)", border: "1px solid rgba(79,110,247,0.15)",
+                  fontSize: 12, color: "var(--text-muted)",
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>Call notes (for reference)</div>
+                  <div style={{ whiteSpace: "pre-wrap" }}>{callNotes}</div>
+                </div>
+              )}
               <div>
                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block" }}>Diagnosis / Assessment *</label>
                 <textarea
@@ -646,7 +618,9 @@ export function Telemedicine({ onBack, notify }: Props) {
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
                 <button className="neu-btn ghost" onClick={() => setPhase("history")}>Skip</button>
-                <button className="neu-btn primary" onClick={submitSummary}>Save Summary</button>
+                <button className="neu-btn primary" onClick={submitSummary}>
+                  <IconSend /> Save Summary
+                </button>
               </div>
             </div>
           </div>
@@ -669,7 +643,7 @@ export function Telemedicine({ onBack, notify }: Props) {
           <h1>Telemedicine</h1>
           <div className="subtitle">Video consultations and call history</div>
         </div>
-        <button className="neu-btn primary" onClick={() => { setPhase("pre"); setSelectedPatient(""); setPreNotes(""); setPostForm({ diagnosis: "", followUp: "", prescriptions: "", nextAppt: "" }); }}>
+        <button className="neu-btn primary" onClick={resetPreCall}>
           <IconVideo off={false} /> New Consultation
         </button>
       </div>

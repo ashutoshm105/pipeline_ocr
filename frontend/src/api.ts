@@ -164,6 +164,24 @@ export const updateAppointment = (id: string, data: any) => jsonPut(`/appointmen
 // ── Lab Results ─────────────────────────────────────────────
 export const listLabResults = (pid: string) => request<any[]>(`/patient/${pid}/labs`);
 export const addLabResult = (data: any) => jsonPost("/labs", data);
+export interface LabInterpretationResult {
+  id: string;
+  patient_id: string;
+  test_name: string;
+  value: number | null;
+  unit: string | null;
+  reference_low: number | null;
+  reference_high: number | null;
+  status: string | null;
+  flag: string;
+  report_id: string | null;
+  tested_at: string;
+  created_at: string;
+}
+export const getLabInterpretation = (pid: string) =>
+  request<LabInterpretationResult[]>(`/lab-interpretation/${pid}`);
+export const testLabInterpretation = () =>
+  request<LabInterpretationResult[]>("/test/lab-interpretation");
 
 // ── Analytics ───────────────────────────────────────────────
 export const getAnalytics = () => request<any>("/analytics");
@@ -189,6 +207,10 @@ export const checkDrugInteractions = (drugs: string[]) =>
 
 // ── ICD-10 ─────────────────────────────────────────────────
 export const searchICD10 = (q = "") => request<any[]>(`/icd10?q=${encodeURIComponent(q)}`);
+
+// ── Patient Education ──────────────────────────────────────
+export const listEducation = (conditionTag = "") =>
+  request<any[]>(`/education${conditionTag ? `?condition=${encodeURIComponent(conditionTag)}` : ""}`);
 export const listDiagnoses = (pid: string) => request<any[]>(`/patient/${pid}/diagnoses`);
 export const addDiagnosis = (pid: string, data: any) => jsonPost(`/patient/${pid}/diagnoses`, data);
 export const deleteDiagnosis = (id: string) => del(`/diagnoses/${id}`);
@@ -198,6 +220,13 @@ export const listReferrals = (pid: string) => request<any[]>(`/patient/${pid}/re
 export const createReferral = (data: any) => jsonPost("/referrals", data);
 export const updateReferralStatus = (id: string, status: string) =>
   jsonPut(`/referrals/${id}/status?status=${status}`, {});
+
+// ── Refills ────────────────────────────────────────────────
+export const listRefills = (status?: string) =>
+  request<any[]>(`/refills${status ? `?status=${status}` : ""}`);
+export const createRefill = (data: any) => jsonPost("/refills", data);
+export const updateRefillStatus = (id: string, status: string) =>
+  jsonPut(`/refills/${id}/status?status=${status}`, {});
 
 // ── Templates ──────────────────────────────────────────────
 export const listTemplates = (type?: string) => request<any[]>(`/templates${type ? `?template_type=${type}` : ""}`);
@@ -214,6 +243,11 @@ export const updateInvoiceStatus = (id: string, status: string) =>
 export const listInsurance = (pid: string) => request<any[]>(`/patient/${pid}/insurance`);
 export const addInsurance = (pid: string, data: any) => jsonPost(`/patient/${pid}/insurance`, data);
 export const deleteInsurance = (id: string) => del(`/insurance/${id}`);
+
+// ── Consent Forms ────────────────────────────────────────────
+export const listConsents = (pid: string) => request<any[]>(`/patient/${pid}/consents`);
+export const createConsent = (data: any) => jsonPost("/consents", data) as Promise<{ id: string }>;
+export const signConsent = (id: string, signature: string) => jsonPut(`/consents/${id}/sign`, { signature });
 
 // ── Doctor Profile ─────────────────────────────────────────
 export const getDoctorProfile = (id: string) => request<any>(`/doctor/profile?doctor_id=${id}`);
@@ -245,3 +279,30 @@ export const hubTest = (providerId: string) =>
 export const hubRecommendations = () => request<any>("/hub/recommendations");
 export const hubGatewayStatus = () => request<any>("/hub/gateway");
 export const hubGatewayTest = () => request<any>("/hub/gateway/test", { method: "POST" });
+
+// ── Research & Open-Source APIs ─────────────────────────────────
+
+export async function searchClinicalTrials(condition: string, phase?: string, status?: string, limit = 10) {
+  const p = new URLSearchParams({ condition: condition || '', limit: String(limit) });
+  if (phase) p.set('phase', phase);
+  if (status) p.set('status', status);
+  return request(`/clinical-trials/search?${p}`);
+}
+
+export async function searchPubMed(query: string, limit = 10) {
+  return request(`/pubmed/search?query=${encodeURIComponent(query)}&limit=${limit}`);
+}
+
+export async function lookupGene(symbol: string) {
+  return request(`/genomics/gene?symbol=${encodeURIComponent(symbol)}`);
+}
+
+export async function searchClinVar(gene: string, variant = '', limit = 10) {
+  const p = new URLSearchParams({ gene, variant, limit: String(limit) });
+  return request(`/genomics/variants?${p}`);
+}
+
+export async function createTelehealthRoom(patientName: string, doctorName = 'Doctor') {
+  const p = new URLSearchParams({ patient_name: patientName, doctor_name: doctorName });
+  return request(`/telemedicine/room?${p}`, { method: 'POST' });
+}

@@ -1,8 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+
+const BASE = "http://localhost:8000/api";
 
 interface Props {
   onBack: () => void;
   notify: (msg: string, type?: "success" | "error") => void;
+}
+
+interface Trial {
+  nct_id: string;
+  title: string;
+  status: string;
+  phase: string;
+  brief_summary: string;
+  start_date: string;
+  locations_count: number;
 }
 
 const PHASES = ["Phase I", "Phase II", "Phase III", "Phase IV"] as const;
@@ -11,15 +23,6 @@ const ENROLLMENT_STEPS = ["Screening", "Consent", "Randomization", "Active", "Fo
 const SEVERITIES = ["Mild", "Moderate", "Severe", "Life-threatening"] as const;
 const RELATIONSHIPS = ["Unrelated", "Unlikely", "Possible", "Probable", "Definite"] as const;
 const OUTCOMES = ["Recovered", "Recovering", "Not recovered", "Fatal", "Unknown"] as const;
-
-const MOCK_TRIALS = [
-  { id: "NCT04012345", title: "Efficacy of Drug A in Type 2 Diabetes", phase: "Phase III", sponsor: "PharmaCorp", status: "Recruiting", pi: "Dr. Elena Vasquez", distance: "3.2 mi", ageLow: 30, ageHigh: 70, inclusion: ["Diagnosed T2D for >1 year", "HbA1c between 7.0-10.0%", "BMI 25-40 kg/m2"], exclusion: ["Insulin-dependent", "eGFR <45 mL/min", "Active liver disease"] },
-  { id: "NCT04023456", title: "Monoclonal Antibody B for Rheumatoid Arthritis", phase: "Phase II", sponsor: "BioGenix", status: "Recruiting", pi: "Dr. James Okafor", distance: "8.5 mi", ageLow: 18, ageHigh: 65, inclusion: ["Active RA per ACR criteria", "Inadequate response to MTX", "DAS28 score >3.2"], exclusion: ["Prior biologic use >2", "Active infection", "Pregnancy"] },
-  { id: "NCT04034567", title: "CAR-T Cell Therapy in Refractory DLBCL", phase: "Phase I", sponsor: "OncoVax Labs", status: "Active", pi: "Dr. Sarah Chen", distance: "12.1 mi", ageLow: 18, ageHigh: 75, inclusion: ["Confirmed DLBCL diagnosis", "Failed >=2 prior therapies", "ECOG 0-1"], exclusion: ["Active CNS involvement", "Prior CAR-T therapy", "Uncontrolled cardiac disease"] },
-  { id: "NCT04045678", title: "Novel SSRI for Treatment-Resistant Depression", phase: "Phase II", sponsor: "NeuroPharm Inc", status: "Recruiting", pi: "Dr. Michael Torres", distance: "5.7 mi", ageLow: 21, ageHigh: 60, inclusion: ["MDD per DSM-5", "Failed >=2 antidepressants", "MADRS score >=20"], exclusion: ["Bipolar disorder", "Active substance abuse", "Suicidal ideation with intent"] },
-  { id: "NCT04056789", title: "Gene Therapy for Sickle Cell Disease", phase: "Phase I", sponsor: "GeneHeal Therapeutics", status: "Active", pi: "Dr. Aisha Patel", distance: "22.0 mi", ageLow: 12, ageHigh: 35, inclusion: ["HbSS genotype confirmed", ">=2 VOC in past year", "Adequate organ function"], exclusion: ["Prior stem cell transplant", "HIV positive", "Active hepatitis"] },
-  { id: "NCT04067890", title: "Immunotherapy Combo in Advanced NSCLC", phase: "Phase III", sponsor: "ImmunoTech", status: "Completed", pi: "Dr. Robert Kim", distance: "15.3 mi", ageLow: 18, ageHigh: 80, inclusion: ["Stage IIIB/IV NSCLC", "PD-L1 >=1%", "No prior immunotherapy"], exclusion: ["Autoimmune disease", "Organ transplant recipient", "Active brain metastases"] },
-];
 
 const MOCK_PATIENTS = [
   { name: "John Martinez", age: 55, conditions: ["Type 2 Diabetes", "Hypertension"] },
@@ -41,33 +44,84 @@ const ICONS = {
   person: <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M4 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
   report: <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 3v7M7 7l3-4 3 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><rect x="3" y="12" width="14" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/></svg>,
   chart: <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><rect x="3" y="10" width="3" height="7" rx="1" fill="currentColor" opacity="0.5"/><rect x="8.5" y="6" width="3" height="11" rx="1" fill="currentColor" opacity="0.7"/><rect x="14" y="3" width="3" height="14" rx="1" fill="currentColor"/></svg>,
+  external: <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8M8 1h4m0 0v4m0-4L5.5 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  spinner: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0110 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>,
 };
 
 type Tab = "search" | "eligibility" | "enrollments" | "adverse" | "results";
 
 export function ClinicalTrials({ onBack, notify }: Props) {
   const [tab, setTab] = useState<Tab>("search");
+
+  // Search state
   const [condition, setCondition] = useState("");
   const [phaseFilter, setPhaseFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [maxDist, setMaxDist] = useState("");
-  const [ageFilter, setAgeFilter] = useState("");
+  const [trials, setTrials] = useState<Trial[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Eligibility state
   const [selPatient, setSelPatient] = useState(0);
-  const [selTrial, setSelTrial] = useState(0);
+  const [selTrialIdx, setSelTrialIdx] = useState(0);
+
+  // Adverse event state
   const [aeDesc, setAeDesc] = useState("");
   const [aeSeverity, setAeSeverity] = useState(SEVERITIES[0]);
   const [aeRelation, setAeRelation] = useState(RELATIONSHIPS[0]);
   const [aeOutcome, setAeOutcome] = useState(OUTCOMES[0]);
   const [aeDate, setAeDate] = useState("2026-07-08");
 
-  const filtered = MOCK_TRIALS.filter(t => {
-    if (condition && !t.title.toLowerCase().includes(condition.toLowerCase())) return false;
-    if (phaseFilter && t.phase !== phaseFilter) return false;
-    if (statusFilter && t.status !== statusFilter) return false;
-    if (maxDist && parseFloat(t.distance) > parseFloat(maxDist)) return false;
-    if (ageFilter) { const a = parseInt(ageFilter); if (a < t.ageLow || a > t.ageHigh) return false; }
-    return true;
-  });
+  // Debounce ref for condition text input
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchTrials = useCallback(async (cond: string, phase: string, status: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (cond.trim()) params.set("condition", cond.trim());
+      if (phase) params.set("phase", phase);
+      if (status) params.set("status", status);
+      const res = await fetch(`${BASE}/clinical-trials/search?${params.toString()}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "Unknown error");
+        throw new Error(`Server error ${res.status}: ${text}`);
+      }
+      const data: { studies: Trial[]; total: number } = await res.json();
+      setTrials(data.studies ?? []);
+      setTotal(data.total ?? 0);
+      setSelTrialIdx(0);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to fetch trials";
+      setError(msg);
+      setTrials([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchTrials("", "", "");
+  }, [fetchTrials]);
+
+  // Re-fetch when phase/status filters change immediately
+  useEffect(() => {
+    fetchTrials(condition, phaseFilter, statusFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phaseFilter, statusFilter]);
+
+  // Debounce condition text input
+  const handleConditionChange = (value: string) => {
+    setCondition(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchTrials(value, phaseFilter, statusFilter);
+    }, 450);
+  };
 
   const phaseBg = (p: string) =>
     p === "Phase I" ? "#8b5cf6" : p === "Phase II" ? "#3b82f6" : p === "Phase III" ? "#10b981" : "#f59e0b";
@@ -75,10 +129,8 @@ export function ClinicalTrials({ onBack, notify }: Props) {
   const statusColor = (s: string) =>
     s === "Recruiting" ? "#10b981" : s === "Active" ? "#3b82f6" : "#6b7280";
 
-  const trial = MOCK_TRIALS[selTrial];
+  const selectedTrial = trials[selTrialIdx] ?? null;
   const patient = MOCK_PATIENTS[selPatient];
-  const eligResults = trial.inclusion.map((c, i) => ({ criteria: c, type: "inclusion" as const, pass: i < 2 }))
-    .concat(trial.exclusion.map((c, i) => ({ criteria: c, type: "exclusion" as const, pass: i > 0 })));
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "search", label: "Trial Search" },
@@ -90,6 +142,8 @@ export function ClinicalTrials({ onBack, notify }: Props) {
 
   return (
     <div className="page-enter">
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
         <button className="neu-btn" onClick={onBack} style={{ padding: 8 }}>{ICONS.back}</button>
         <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Clinical Trials</h1>
@@ -108,7 +162,12 @@ export function ClinicalTrials({ onBack, notify }: Props) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>Condition</label>
-                <input className="neu-input" placeholder="e.g. Diabetes" value={condition} onChange={e => setCondition(e.target.value)} />
+                <input
+                  className="neu-input"
+                  placeholder="e.g. Diabetes"
+                  value={condition}
+                  onChange={e => handleConditionChange(e.target.value)}
+                />
               </div>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>Phase</label>
@@ -124,47 +183,78 @@ export function ClinicalTrials({ onBack, notify }: Props) {
                   {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>Max Distance (mi)</label>
-                <input className="neu-input" type="number" placeholder="e.g. 20" value={maxDist} onChange={e => setMaxDist(e.target.value)} />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>Patient Age</label>
-                <input className="neu-input" type="number" placeholder="e.g. 45" value={ageFilter} onChange={e => setAgeFilter(e.target.value)} />
-              </div>
             </div>
           </div>
 
-          <div className="section-header">{ICONS.trial} Matched Trials ({filtered.length})</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {filtered.map(t => (
-              <div key={t.id} className="neu" style={{ padding: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
-                  <div style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{t.title}</div>
-                    <div style={{ fontSize: 13, color: "var(--text-secondary, #6b7280)", marginBottom: 6 }}>{t.id}</div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                      <span style={{ background: phaseBg(t.phase), color: "#fff", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>{t.phase}</span>
-                      <span style={{ color: statusColor(t.status), fontWeight: 600, fontSize: 13 }}>{t.status}</span>
-                    </div>
-                    <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-                      <div><strong>Sponsor:</strong> {t.sponsor}</div>
-                      <div><strong>PI:</strong> {t.pi}</div>
-                      <div><strong>Distance:</strong> {t.distance}</div>
-                      <div><strong>Age Range:</strong> {t.ageLow}-{t.ageHigh} years</div>
+          {loading && (
+            <div className="neu" style={{ padding: 32, textAlign: "center", color: "var(--text-secondary, #6b7280)", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+              {ICONS.spinner}
+              <span>Searching ClinicalTrials.gov…</span>
+            </div>
+          )}
+
+          {!loading && error && (
+            <div className="neu" style={{ padding: 20, textAlign: "center", color: "#ef4444", borderLeft: "3px solid #ef4444" }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Failed to load trials</div>
+              <div style={{ fontSize: 13 }}>{error}</div>
+              <button
+                className="neu-btn"
+                style={{ marginTop: 12, padding: "6px 16px", fontSize: 13 }}
+                onClick={() => fetchTrials(condition, phaseFilter, statusFilter)}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!loading && !error && (
+            <>
+              <div className="section-header">{ICONS.trial} Matched Trials ({total > 0 ? `${trials.length} shown of ${total}` : trials.length})</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {trials.map(t => (
+                  <div key={t.nct_id} className="neu" style={{ padding: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{t.title}</div>
+                        <div style={{ fontSize: 13, color: "var(--text-secondary, #6b7280)", marginBottom: 6 }}>{t.nct_id}</div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                          {t.phase && (
+                            <span style={{ background: phaseBg(t.phase), color: "#fff", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>{t.phase}</span>
+                          )}
+                          <span style={{ color: statusColor(t.status), fontWeight: 600, fontSize: 13 }}>{t.status}</span>
+                        </div>
+                        <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                          {t.start_date && <div><strong>Started:</strong> {t.start_date}</div>}
+                          {t.locations_count > 0 && <div><strong>Locations:</strong> {t.locations_count}</div>}
+                        </div>
+                        <a
+                          href={`https://clinicaltrials.gov/study/${t.nct_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 8, fontSize: 12, color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}
+                        >
+                          {ICONS.external} View on ClinicalTrials.gov
+                        </a>
+                      </div>
+                      {t.brief_summary && (
+                        <div style={{ minWidth: 200, maxWidth: 340 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Summary</div>
+                          <div style={{ fontSize: 12, lineHeight: 1.7, color: "var(--text-secondary, #6b7280)" }}>
+                            {t.brief_summary.length > 220 ? `${t.brief_summary.slice(0, 220).trimEnd()}…` : t.brief_summary}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div style={{ minWidth: 200 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Key Eligibility</div>
-                    <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, lineHeight: 1.8, color: "var(--text-secondary, #6b7280)" }}>
-                      {t.inclusion.slice(0, 2).map((c, i) => <li key={i}>{c}</li>)}
-                    </ul>
+                ))}
+                {trials.length === 0 && (
+                  <div className="neu" style={{ padding: 24, textAlign: "center", color: "var(--text-secondary, #6b7280)" }}>
+                    No trials match your filters.
                   </div>
-                </div>
+                )}
               </div>
-            ))}
-            {filtered.length === 0 && <div className="neu" style={{ padding: 24, textAlign: "center", color: "var(--text-secondary, #6b7280)" }}>No trials match your filters.</div>}
-          </div>
+            </>
+          )}
         </div>
       )}
 
@@ -181,8 +271,9 @@ export function ClinicalTrials({ onBack, notify }: Props) {
               </div>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>Select Trial</label>
-                <select className="neu-input" value={selTrial} onChange={e => setSelTrial(+e.target.value)}>
-                  {MOCK_TRIALS.map((t, i) => <option key={i} value={i}>{t.id} - {t.title}</option>)}
+                <select className="neu-input" value={selTrialIdx} onChange={e => setSelTrialIdx(+e.target.value)} disabled={trials.length === 0}>
+                  {trials.length === 0 && <option value={0}>No trials loaded — search first</option>}
+                  {trials.map((t, i) => <option key={t.nct_id} value={i}>{t.nct_id} — {t.title.slice(0, 60)}{t.title.length > 60 ? "…" : ""}</option>)}
                 </select>
               </div>
             </div>
@@ -192,25 +283,47 @@ export function ClinicalTrials({ onBack, notify }: Props) {
             </div>
           </div>
 
-          <div className="section-header">Criteria Assessment</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {eligResults.map((r, i) => (
-              <div key={i} className="neu" style={{ padding: 12, display: "flex", alignItems: "center", gap: 12, borderLeft: `3px solid ${r.pass ? "#10b981" : "#ef4444"}` }}>
-                <span style={{ color: r.pass ? "#10b981" : "#ef4444", flexShrink: 0 }}>{r.pass ? ICONS.check : ICONS.cross}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{r.criteria}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-secondary, #6b7280)", textTransform: "uppercase" }}>{r.type}</div>
-                </div>
-                <span style={{ fontSize: 12, fontWeight: 600, color: r.pass ? "#10b981" : "#ef4444" }}>{r.pass ? "PASS" : "FAIL"}</span>
+          {selectedTrial ? (
+            <>
+              <div className="section-header">Trial Overview</div>
+              <div className="neu" style={{ padding: 14, marginBottom: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{selectedTrial.title}</div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary, #6b7280)", marginBottom: 8 }}>{selectedTrial.nct_id} · {selectedTrial.phase} · <span style={{ color: statusColor(selectedTrial.status) }}>{selectedTrial.status}</span></div>
+                {selectedTrial.brief_summary && (
+                  <div style={{ fontSize: 13, lineHeight: 1.7, color: "var(--text-secondary, #6b7280)", marginBottom: 8 }}>{selectedTrial.brief_summary}</div>
+                )}
+                <a
+                  href={`https://clinicaltrials.gov/study/${selectedTrial.nct_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}
+                >
+                  {ICONS.external} View full eligibility criteria on ClinicalTrials.gov
+                </a>
               </div>
-            ))}
-          </div>
-          <div className="neu" style={{ padding: 16, marginTop: 16, textAlign: "center" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Overall: {eligResults.filter(r => r.pass).length}/{eligResults.length} criteria met</div>
-            <div style={{ fontSize: 13, color: eligResults.every(r => r.pass) ? "#10b981" : "#f59e0b" }}>
-              {eligResults.every(r => r.pass) ? "Patient is eligible" : "Patient may not be eligible - review failed criteria"}
+
+              <div className="section-header">Match Assessment</div>
+              <div className="neu" style={{ padding: 16, textAlign: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>
+                  {patient.name} · {selectedTrial.nct_id}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary, #6b7280)", marginBottom: 12 }}>
+                  Detailed inclusion / exclusion criteria require the full ClinicalTrials.gov record.
+                </div>
+                <button
+                  className="neu-btn"
+                  style={{ padding: "8px 18px", fontWeight: 600, fontSize: 13 }}
+                  onClick={() => notify("Patient flagged for manual eligibility review", "success")}
+                >
+                  Flag for Manual Review
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="neu" style={{ padding: 24, textAlign: "center", color: "var(--text-secondary, #6b7280)" }}>
+              Search for trials on the Trial Search tab first, then return here to assess eligibility.
             </div>
-          </div>
+          )}
 
           <div className="section-header" style={{ marginTop: 24 }}>Enrollment Workflow</div>
           <div className="neu" style={{ padding: 16 }}>

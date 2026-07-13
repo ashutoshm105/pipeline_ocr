@@ -1,11 +1,13 @@
-import { useState } from "react";
+import React, { useState, useRef } from "react";
 
 interface Props {
   onBack: () => void;
   notify: (msg: string, type?: "success" | "error") => void;
 }
 
-type Tab = "experiments" | "pipeline" | "datasets" | "analysis" | "reports" | "collab";
+type Tab = "experiments" | "pipeline" | "datasets" | "analysis" | "reports" | "collab" | "literature";
+
+// ── Domain types ──────────────────────────────────────────────────────────────
 
 interface Experiment {
   id: string; name: string; hypothesis: string; methodology: string;
@@ -22,6 +24,23 @@ interface TeamMember {
   name: string; role: "PI" | "Co-PI" | "Analyst" | "Reviewer"; avatar: string;
 }
 
+interface PubMedArticle {
+  pmid: string;
+  title: string;
+  authors: string[];
+  journal: string;
+  pub_date: string;
+  doi: string | null;
+  url: string;
+}
+
+interface PubMedResponse {
+  articles: PubMedArticle[];
+  total: number;
+}
+
+// ── Static mock data (unchanged from original) ────────────────────────────────
+
 const TABS: { key: Tab; label: string }[] = [
   { key: "experiments", label: "Experiments" },
   { key: "pipeline", label: "Pipeline Builder" },
@@ -29,6 +48,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "analysis", label: "Analysis Workbench" },
   { key: "reports", label: "Reports" },
   { key: "collab", label: "Collaboration" },
+  { key: "literature", label: "Literature Search" },
 ];
 
 const MOCK_EXPERIMENTS: Experiment[] = [
@@ -76,6 +96,8 @@ const COMMENTS = [
   { user: "Dr. Sarah Chen", text: "Agreed. Let's also re-run the sensitivity analysis with the updated cutoff.", time: "1 day ago", experiment: "EXP-004" },
 ];
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 const statusColor = (s: string) => {
   switch (s) {
     case "active": case "running": return "var(--success)";
@@ -85,6 +107,16 @@ const statusColor = (s: string) => {
     default: return "var(--text-muted, #999)";
   }
 };
+
+/** Extract the first 1-3 meaningful medical/science keywords from a hypothesis string. */
+function hypothesisKeywords(hypothesis: string): string {
+  // Strip common stopwords and short words, keep capitalized terms and known acronyms
+  const stopwords = new Set(["the", "a", "an", "and", "or", "of", "in", "at", "to", "for", "is", "are", "show", "shows", "when", "with", "combined", "better", "days", "advance", "specific", "ratios", "predict", "maintains", "potency", "achieves", "sensitivity", "early", "detection", "combined", "carriers"]);
+  const words = hypothesis.split(/[\s,;.]+/).filter(w => w.length > 3 && !stopwords.has(w.toLowerCase()));
+  return words.slice(0, 4).join(" ");
+}
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
 
 const FlaskIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3h6M10 3v6.5L4 20h16L14 9.5V3"/><path d="M8.5 14h7"/></svg>
@@ -104,30 +136,103 @@ const FileIcon = () => (
 const UsersIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
 );
+const BookIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+);
 const ArrowIcon = () => (
   <svg width="24" height="18" viewBox="0 0 24 18" fill="none" stroke="var(--text-muted, #999)" strokeWidth="2"><path d="M0 9h20M16 4l5 5-5 5"/></svg>
 );
 const GearIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 );
+const SearchIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+);
+const ExternalLinkIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+);
 
-const TAB_ICONS: Record<Tab, () => JSX.Element> = {
+const TAB_ICONS: Record<Tab, () => React.JSX.Element> = {
   experiments: FlaskIcon, pipeline: PipeIcon, datasets: DatabaseIcon,
-  analysis: BrainIcon, reports: FileIcon, collab: UsersIcon,
+  analysis: BrainIcon, reports: FileIcon, collab: UsersIcon, literature: BookIcon,
 };
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export function ResearchPipeline({ onBack, notify }: Props) {
   const [tab, setTab] = useState<Tab>("experiments");
+
+  // Datasets tab state
   const [dsSearch, setDsSearch] = useState("");
   const [dsFilter, setDsFilter] = useState<string>("all");
+
+  // Analysis tab state
   const [model, setModel] = useState("claude");
   const [temperature, setTemperature] = useState("0.3");
   const [maxTokens, setMaxTokens] = useState("4096");
   const [systemPrompt, setSystemPrompt] = useState("You are a biomedical research assistant. Analyze the provided data and return structured findings with confidence scores.");
   const [analysisRun, setAnalysisRun] = useState(false);
+
+  // Reports tab state
   const [reportTemplate, setReportTemplate] = useState("research-summary");
+
+  // Experiments tab state
   const [newExpName, setNewExpName] = useState("");
   const [newExpHypo, setNewExpHypo] = useState("");
+
+  // Literature / PubMed state
+  const [litQuery, setLitQuery] = useState("");
+  const [litLoading, setLitLoading] = useState(false);
+  const [litError, setLitError] = useState<string | null>(null);
+  const [litResults, setLitResults] = useState<PubMedResponse | null>(null);
+  const litInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // ── PubMed API call ──────────────────────────────────────────────────────────
+
+  const searchPubMed = async (query: string) => {
+    const q = query.trim();
+    if (!q) return;
+
+    // Cancel any in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setLitLoading(true);
+    setLitError(null);
+    setLitResults(null);
+
+    try {
+      const url = `/api/pubmed/search?query=${encodeURIComponent(q)}&limit=10`;
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        throw new Error(`Server error ${res.status}: ${text}`);
+      }
+      const data: PubMedResponse = await res.json();
+      setLitResults(data);
+      notify(`Found ${data.total.toLocaleString()} articles for "${q}"`, "success");
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setLitError(msg);
+      notify("PubMed search failed: " + msg, "error");
+    } finally {
+      setLitLoading(false);
+    }
+  };
+
+  /** Switch to literature tab and pre-fill query from an experiment hypothesis. */
+  const searchLiteratureForExp = (exp: Experiment) => {
+    const kw = hypothesisKeywords(exp.hypothesis);
+    setLitQuery(kw);
+    setTab("literature");
+    // Kick off the search after the tab renders
+    setTimeout(() => searchPubMed(kw), 50);
+  };
+
+  // ── Datasets tab ─────────────────────────────────────────────────────────────
 
   const filteredDatasets = MOCK_DATASETS.filter(d => {
     const matchSearch = !dsSearch || d.name.toLowerCase().includes(dsSearch.toLowerCase()) || d.tags.some(t => t.toLowerCase().includes(dsSearch.toLowerCase()));
@@ -135,13 +240,20 @@ export function ResearchPipeline({ onBack, notify }: Props) {
     return matchSearch && matchFilter;
   });
 
+  // ── Tab renderers ─────────────────────────────────────────────────────────────
+
   const renderExperiments = () => (
     <div>
       <div className="section-header"><div><h2>Experiment Manager</h2><div className="subtitle">Create and track research experiments</div></div></div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <input className="neu-input" placeholder="Experiment name" value={newExpName} onChange={e => setNewExpName(e.target.value)} style={{ flex: 1, minWidth: 180 }} />
         <input className="neu-input" placeholder="Hypothesis" value={newExpHypo} onChange={e => setNewExpHypo(e.target.value)} style={{ flex: 2, minWidth: 220 }} />
-        <button className="neu-btn" onClick={() => { if (!newExpName.trim()) return; notify("Experiment created: " + newExpName, "success"); setNewExpName(""); setNewExpHypo(""); }}>+ Create</button>
+        <button className="neu-btn" onClick={() => {
+          if (!newExpName.trim()) return;
+          notify("Experiment created: " + newExpName, "success");
+          setNewExpName("");
+          setNewExpHypo("");
+        }}>+ Create</button>
       </div>
       <div style={{ display: "grid", gap: 12 }}>
         {MOCK_EXPERIMENTS.map(exp => (
@@ -154,7 +266,17 @@ export function ResearchPipeline({ onBack, notify }: Props) {
                 </div>
                 <div style={{ fontSize: 13, color: "var(--text-secondary, #666)", marginTop: 4 }}>{exp.id} &middot; PI: {exp.pi}</div>
               </div>
-              <div style={{ fontSize: 12, color: "var(--text-muted, #999)" }}>{exp.startDate} &rarr; {exp.endDate}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ fontSize: 12, color: "var(--text-muted, #999)" }}>{exp.startDate} &rarr; {exp.endDate}</div>
+                <button
+                  className="neu-btn"
+                  style={{ fontSize: 11, padding: "3px 10px", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}
+                  onClick={() => searchLiteratureForExp(exp)}
+                  title="Search PubMed for related literature"
+                >
+                  <BookIcon /> Search Literature
+                </button>
+              </div>
             </div>
             <div style={{ fontSize: 13, marginTop: 8, color: "var(--text-secondary, #666)" }}>
               <strong>H:</strong> {exp.hypothesis}
@@ -370,9 +492,208 @@ export function ResearchPipeline({ onBack, notify }: Props) {
     </div>
   );
 
-  const RENDERERS: Record<Tab, () => JSX.Element> = {
-    experiments: renderExperiments, pipeline: renderPipeline, datasets: renderDatasets,
-    analysis: renderAnalysis, reports: renderReports, collab: renderCollab,
+  // ── Literature Search tab ──────────────────────────────────────────────────────
+
+  const renderLiterature = () => {
+    const handleSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      searchPubMed(litQuery);
+    };
+
+    return (
+      <div>
+        {/* Header */}
+        <div className="section-header">
+          <div>
+            <h2>Literature Search</h2>
+            <div className="subtitle">
+              Search PubMed for peer-reviewed biomedical literature
+            </div>
+          </div>
+        </div>
+
+        {/* Search bar */}
+        <form onSubmit={handleSubmit} style={{ display: "flex", gap: 8, marginBottom: 20, alignItems: "center" }}>
+          <div style={{ flex: 1, position: "relative" }}>
+            <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted, #999)", pointerEvents: "none" }}>
+              <SearchIcon />
+            </span>
+            <input
+              ref={litInputRef}
+              className="neu-input"
+              placeholder="e.g. BRCA2 PARP inhibitor immunotherapy"
+              value={litQuery}
+              onChange={e => setLitQuery(e.target.value)}
+              style={{ width: "100%", paddingLeft: 38, boxSizing: "border-box" }}
+              autoFocus
+            />
+          </div>
+          <button
+            type="submit"
+            className="neu-btn"
+            disabled={litLoading || !litQuery.trim()}
+            style={{ minWidth: 100, display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}
+          >
+            {litLoading
+              ? <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid var(--accent, #1a73e8)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+              : <SearchIcon />}
+            {litLoading ? "Searching…" : "Search"}
+          </button>
+        </form>
+
+        {/* Quick-search chips from experiments */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted, #999)", marginBottom: 6 }}>Quick search from experiments:</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {MOCK_EXPERIMENTS.map(exp => {
+              const kw = hypothesisKeywords(exp.hypothesis);
+              return (
+                <button
+                  key={exp.id}
+                  className="neu-btn"
+                  style={{ fontSize: 11, padding: "3px 10px" }}
+                  onClick={() => { setLitQuery(kw); searchPubMed(kw); }}
+                >
+                  {exp.id}: {kw}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Error state */}
+        {litError && (
+          <div className="neu" style={{ padding: 16, borderLeft: "3px solid var(--error, #e74c3c)", marginBottom: 16 }}>
+            <div style={{ fontWeight: 600, color: "var(--error, #e74c3c)", marginBottom: 4 }}>Search failed</div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary, #666)" }}>{litError}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted, #999)", marginTop: 8 }}>
+              Make sure the backend is running and <code>/api/pubmed/search</code> is reachable.
+            </div>
+          </div>
+        )}
+
+        {/* Loading skeleton */}
+        {litLoading && (
+          <div style={{ display: "grid", gap: 12 }}>
+            {[1, 2, 3].map(i => (
+              <div key={i} className="neu" style={{ padding: 18 }}>
+                <div style={{ height: 14, background: "var(--border, #e0e0e0)", borderRadius: 6, marginBottom: 10, width: "70%", animation: "pulse 1.2s ease-in-out infinite" }} />
+                <div style={{ height: 11, background: "var(--border, #e0e0e0)", borderRadius: 6, marginBottom: 6, width: "50%", animation: "pulse 1.2s ease-in-out infinite" }} />
+                <div style={{ height: 11, background: "var(--border, #e0e0e0)", borderRadius: 6, width: "40%", animation: "pulse 1.2s ease-in-out infinite" }} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Results */}
+        {!litLoading && litResults && (
+          <>
+            <div style={{ fontSize: 13, color: "var(--text-muted, #999)", marginBottom: 12 }}>
+              Showing {litResults.articles.length} of <strong>{litResults.total.toLocaleString()}</strong> articles for <em>"{litQuery}"</em>
+            </div>
+            {litResults.articles.length === 0 ? (
+              <div className="neu" style={{ padding: 32, textAlign: "center", color: "var(--text-muted, #999)" }}>
+                No articles found for this query. Try broader terms.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {litResults.articles.map(article => (
+                  <ArticleCard key={article.pmid} article={article} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Empty / idle state */}
+        {!litLoading && !litResults && !litError && (
+          <div className="neu" style={{ padding: 40, textAlign: "center", color: "var(--text-muted, #999)" }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>
+              <BookIcon />
+            </div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Search PubMed</div>
+            <div style={{ fontSize: 13 }}>Enter a query above or click a quick-search chip from your experiments.</div>
+          </div>
+        )}
+
+        {/* CSS animations */}
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        `}</style>
+      </div>
+    );
+  };
+
+  // ── Article card sub-component ────────────────────────────────────────────────
+
+  const ArticleCard = ({ article }: { article: PubMedArticle }) => {
+    const authorList = article.authors.length > 0
+      ? article.authors.slice(0, 3).join(", ") + (article.authors.length > 3 ? ` +${article.authors.length - 3} more` : "")
+      : "Authors unavailable";
+
+    return (
+      <div className="neu" style={{ padding: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Title */}
+            <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.4, marginBottom: 6 }}>
+              {article.title}
+            </div>
+            {/* Authors */}
+            <div style={{ fontSize: 12, color: "var(--text-secondary, #666)", marginBottom: 4 }}>
+              {authorList}
+            </div>
+            {/* Journal + date */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 12, color: "var(--text-muted, #999)" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ fontSize: 10 }}>&#128240;</span> {article.journal}
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ fontSize: 10 }}>&#128197;</span> {article.pub_date}
+              </span>
+              {article.doi && (
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontSize: 10 }}>DOI:</span>
+                  <span style={{ fontFamily: "monospace", fontSize: 11 }}>{article.doi}</span>
+                </span>
+              )}
+            </div>
+          </div>
+          {/* Actions */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end", flexShrink: 0 }}>
+            <span style={{ fontSize: 11, color: "var(--text-muted, #999)", background: "var(--bg-secondary, #f5f5f5)", padding: "2px 8px", borderRadius: 10 }}>
+              PMID {article.pmid}
+            </span>
+            <a
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                fontSize: 12, padding: "4px 12px", borderRadius: 8,
+                background: "var(--accent-soft, #e8f0fe)", color: "var(--accent, #1a73e8)",
+                textDecoration: "none", fontWeight: 600,
+              }}
+            >
+              Read on PubMed <ExternalLinkIcon />
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Route tabs to renderers ───────────────────────────────────────────────────
+
+  const RENDERERS: Record<Tab, () => React.JSX.Element> = {
+    experiments: renderExperiments,
+    pipeline: renderPipeline,
+    datasets: renderDatasets,
+    analysis: renderAnalysis,
+    reports: renderReports,
+    collab: renderCollab,
+    literature: renderLiterature,
   };
 
   return (
@@ -394,7 +715,12 @@ export function ResearchPipeline({ onBack, notify }: Props) {
         {TABS.map(t => {
           const Icon = TAB_ICONS[t.key];
           return (
-            <button key={t.key} className={`chart-tab${tab === t.key ? " active" : ""}`} onClick={() => setTab(t.key)} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <button
+              key={t.key}
+              className={`chart-tab${tab === t.key ? " active" : ""}`}
+              onClick={() => setTab(t.key)}
+              style={{ display: "flex", alignItems: "center", gap: 5 }}
+            >
               <Icon /> {t.label}
             </button>
           );

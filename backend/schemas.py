@@ -253,6 +253,11 @@ class ReferralReq(BaseModel):
     urgency: str = "routine"
     notes: str = ""
 
+class RefillReq(BaseModel):
+    patient_id: str
+    prescription_id: str
+    notes: str = ""
+
 class TemplateReq(BaseModel):
     template_type: str
     name: str
@@ -275,6 +280,15 @@ class InsuranceReq(BaseModel):
     relationship: str = "self"
     effective_date: str = ""
     expiry_date: str = ""
+
+class ConsentFormReq(BaseModel):
+    patient_id: str
+    form_type: str
+    title: str
+    content: str = ""
+
+class ConsentSignReq(BaseModel):
+    signature: str
 
 class DoctorProfileReq(BaseModel):
     name: str = ""

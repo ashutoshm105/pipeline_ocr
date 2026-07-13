@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import * as api from "../api";
 
 /* ── types ── */
 type Severity = "normal" | "warning" | "critical";
@@ -80,21 +81,19 @@ const DEFAULT_THRESHOLDS: Thresholds = {
   rr: { min: 12, max: 20, enabled: true },
 };
 
-const BASELINES: Vitals[] = [
-  { hr: 72, spo2: 98, bpSys: 120, bpDia: 78, temp: 98.4, rr: 16 },
-  { hr: 88, spo2: 95, bpSys: 135, bpDia: 85, temp: 99.1, rr: 18 },
-  { hr: 65, spo2: 99, bpSys: 115, bpDia: 72, temp: 98.2, rr: 14 },
-  { hr: 105, spo2: 91, bpSys: 145, bpDia: 92, temp: 100.2, rr: 22 },
-  { hr: 78, spo2: 97, bpSys: 118, bpDia: 76, temp: 98.6, rr: 15 },
-  { hr: 92, spo2: 94, bpSys: 130, bpDia: 88, temp: 99.8, rr: 20 },
-];
+const EMPTY_VITALS: Vitals = { hr: 0, spo2: 0, bpSys: 0, bpDia: 0, temp: 0, rr: 0 };
 
-const NAMES = ["Adams, J.", "Baker, M.", "Chen, L.", "Davis, R.", "Evans, S.", "Foster, K."];
-const ROOMS = ["201A", "201B", "202A", "203A", "204A", "204B"];
+/* maps a raw /api/patient/{id}/vitals row (snake_case, per schemas.VitalReq) to the UI's Vitals shape */
+const rowToVitals = (row: any): Vitals => ({
+  hr: row.heart_rate ?? 0,
+  spo2: row.spo2 ?? 0,
+  bpSys: row.systolic ?? 0,
+  bpDia: row.diastolic ?? 0,
+  temp: row.temperature ?? 0,
+  rr: row.respiratory_rate ?? 0,
+});
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
-const uid = () => Math.random().toString(36).slice(2, 10);
 
 const severity = (v: number, cfg: ThresholdCfg): Severity => {
   if (!cfg.enabled) return "normal";
@@ -120,36 +119,11 @@ const severityColor = (s: Severity) =>
 const fmtTime = (d: Date) =>
   d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-/* ── seed data ── */
-const seedPatients = (): Patient[] =>
-  BASELINES.map((b, i) => ({
-    id: `p${i}`,
-    name: NAMES[i],
-    room: ROOMS[i],
-    vitals: { ...b },
-    history: Array.from({ length: 48 }, (_, j) => ({
-      ts: Date.now() - (48 - j) * 30 * 60_000,
-      vitals: {
-        hr: clamp(b.hr + rand(-8, 8), 40, 180),
-        spo2: clamp(b.spo2 + rand(-3, 1), 70, 100),
-        bpSys: clamp(b.bpSys + rand(-10, 10), 70, 200),
-        bpDia: clamp(b.bpDia + rand(-6, 6), 40, 130),
-        temp: +(clamp(b.temp + rand(-0.5, 0.5), 95, 105)).toFixed(1),
-        rr: clamp(b.rr + rand(-3, 3), 6, 40),
-      },
-    })),
-  }));
-
-const seedDevices = (): Device[] =>
-  BASELINES.map((_, i) => ({
-    id: `d${i}`,
-    serial: `MON-${2000 + i}`,
-    type: i % 2 === 0 ? "Bedside Monitor" : "Wireless Patch",
-    status: (["online", "online", "online", "online", "low-battery", "offline"] as DeviceStatus[])[i],
-    battery: [95, 88, 72, 100, 15, 0][i],
-    lastSync: new Date(Date.now() - i * 60_000),
-    patientId: `p${i}`,
-  }));
+/* ── devices (no real hardware integration exists yet — static placeholder list) ── */
+const STATIC_DEVICES: Device[] = [
+  { id: "d0", serial: "MON-2000", type: "Bedside Monitor", status: "online", battery: 95, lastSync: new Date(), patientId: "" },
+  { id: "d1", serial: "MON-2001", type: "Wireless Patch", status: "online", battery: 88, lastSync: new Date(), patientId: "" },
+];
 
 /* ── mini waveform SVG ── */
 const Waveform = ({ color }: { color: string }) => (
@@ -222,61 +196,95 @@ const DeviceIcon = () => (
 
 /* ── component ── */
 export function VitalsMonitor({ onBack, notify }: { onBack: () => void; notify: (msg: string, type?: "success" | "error") => void }) {
-  const [patients, setPatients] = useState<Patient[]>(seedPatients);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [devices] = useState<Device[]>(seedDevices);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [devices] = useState<Device[]>(STATIC_DEVICES);
   const [thresholds, setThresholds] = useState<Thresholds>({ ...DEFAULT_THRESHOLDS });
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
   const [tab, setTab] = useState<"grid" | "alerts" | "thresholds" | "devices">("grid");
-  const alertIdRef = useRef(0);
+  const [recordForm, setRecordForm] = useState<Partial<Record<keyof Vitals, string>>>({});
+  const [recording, setRecording] = useState(false);
 
-  /* simulate vital changes */
+  /* load a single patient's vitals history from the real backend */
+  const loadPatientVitals = useCallback(async (id: string, name: string): Promise<Patient> => {
+    const rows = await api.listVitals(id, 48);
+    const ordered = [...rows].reverse(); // backend returns newest-first; chart wants oldest-first
+    const history = ordered.map((r: any) => ({
+      ts: new Date(r.recorded_at).getTime(),
+      vitals: rowToVitals(r),
+    }));
+    const latest = rows.length > 0 ? rowToVitals(rows[0]) : { ...EMPTY_VITALS };
+    return { id, name, room: "—", vitals: latest, history };
+  }, []);
+
+  /* fetch real patients + their real vitals ── replaces the old fake-data seed */
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rawPatients: any[] = await api.listPatients();
+      const withVitals = await Promise.all(
+        rawPatients.map((p) => loadPatientVitals(p.id, p.name || p.phone || p.id)),
+      );
+      setPatients(withVitals);
+    } catch {
+      notify("Failed to load vitals", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [loadPatientVitals, notify]);
+
   useEffect(() => {
-    const id = setInterval(() => {
-      setPatients((prev) => {
-        const next = prev.map((p) => {
-          const base = BASELINES[parseInt(p.id.slice(1))];
-          const vitals: Vitals = {
-            hr: Math.round(clamp(p.vitals.hr + rand(-2, 2), base.hr - 15, base.hr + 15)),
-            spo2: Math.round(clamp(p.vitals.spo2 + rand(-1, 0.5), base.spo2 - 6, 100)),
-            bpSys: Math.round(clamp(p.vitals.bpSys + rand(-3, 3), base.bpSys - 15, base.bpSys + 15)),
-            bpDia: Math.round(clamp(p.vitals.bpDia + rand(-2, 2), base.bpDia - 10, base.bpDia + 10)),
-            temp: +(clamp(p.vitals.temp + rand(-0.1, 0.1), base.temp - 1, base.temp + 1)).toFixed(1),
-            rr: Math.round(clamp(p.vitals.rr + rand(-1, 1), base.rr - 4, base.rr + 4)),
-          };
-          const history = [...p.history.slice(-47), { ts: Date.now(), vitals }];
-          return { ...p, vitals, history };
+    refresh();
+  }, [refresh]);
+
+  /* alerts are derived live from the current (real) vitals + thresholds, not simulated */
+  const alerts: Alert[] = useMemo(() => {
+    const out: Alert[] = [];
+    for (const p of patients) {
+      for (const k of Object.keys(p.vitals) as (keyof Vitals)[]) {
+        const cfg = thresholds[k];
+        const s = severity(p.vitals[k], cfg);
+        if (s !== "normal" && p.vitals[k] !== 0) {
+          out.push({
+            id: `${p.id}-${k}`,
+            patientId: p.id,
+            patientName: p.name,
+            vital: VITAL_LABELS[k],
+            value: p.vitals[k],
+            threshold: `${cfg.min}–${cfg.max}`,
+            severity: s as AlertSeverity,
+            time: new Date(),
+          });
+        }
+      }
+    }
+    return out;
+  }, [patients, thresholds]);
+
+  const submitVitals = useCallback(
+    async (patientId: string) => {
+      setRecording(true);
+      try {
+        await api.recordVital({
+          patient_id: patientId,
+          systolic: recordForm.bpSys ? +recordForm.bpSys : undefined,
+          diastolic: recordForm.bpDia ? +recordForm.bpDia : undefined,
+          heart_rate: recordForm.hr ? +recordForm.hr : undefined,
+          temperature: recordForm.temp ? +recordForm.temp : undefined,
+          spo2: recordForm.spo2 ? +recordForm.spo2 : undefined,
+          respiratory_rate: recordForm.rr ? +recordForm.rr : undefined,
         });
-
-        /* generate alerts from threshold breaches */
-        const newAlerts: Alert[] = [];
-        for (const p of next) {
-          for (const k of Object.keys(p.vitals) as (keyof Vitals)[]) {
-            const cfg = thresholds[k];
-            const s = severity(p.vitals[k], cfg);
-            if (s !== "normal") {
-              newAlerts.push({
-                id: `a${++alertIdRef.current}`,
-                patientId: p.id,
-                patientName: p.name,
-                vital: VITAL_LABELS[k],
-                value: p.vitals[k],
-                threshold: `${cfg.min}–${cfg.max}`,
-                severity: s as AlertSeverity,
-                time: new Date(),
-              });
-            }
-          }
-        }
-        if (newAlerts.length > 0) {
-          setAlerts((prev) => [...newAlerts, ...prev].slice(0, 50));
-        }
-
-        return next;
-      });
-    }, 2000);
-    return () => clearInterval(id);
-  }, [thresholds]);
+        notify("Vitals recorded", "success");
+        setRecordForm({});
+        await refresh();
+      } catch {
+        notify("Failed to record vitals", "error");
+      } finally {
+        setRecording(false);
+      }
+    },
+    [recordForm, notify, refresh],
+  );
 
   const handleNurseCall = useCallback(
     (priority: NursePriority, patientName: string) => {
@@ -348,6 +356,27 @@ export function VitalsMonitor({ onBack, notify }: { onBack: () => void; notify: 
           </div>
         </div>
 
+        {/* record new vitals */}
+        <div className="neu" style={{ padding: 14, borderRadius: 14, marginBottom: 16 }}>
+          <div className="section-header" style={{ marginBottom: 8 }}>Record Vitals</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {(Object.keys(VITAL_LABELS) as (keyof Vitals)[]).map((k) => (
+              <input
+                key={k}
+                className="neu neu-input"
+                type="number"
+                placeholder={`${VITAL_LABELS[k]} (${VITAL_UNITS[k]})`}
+                style={{ width: 130, padding: "6px 8px", fontSize: 13 }}
+                value={recordForm[k] ?? ""}
+                onChange={(e) => setRecordForm((prev) => ({ ...prev, [k]: e.target.value }))}
+              />
+            ))}
+            <button className="neu neu-btn" disabled={recording} onClick={() => submitVitals(detail.id)}>
+              {recording ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+
         {/* trend charts */}
         <div className="neu" style={{ padding: 14, borderRadius: 14 }}>
           <div className="section-header" style={{ marginBottom: 8 }}>24h Trends</div>
@@ -396,7 +425,13 @@ export function VitalsMonitor({ onBack, notify }: { onBack: () => void; notify: 
       </div>
 
       {/* ── tab: patient grid ── */}
-      {tab === "grid" && (
+      {tab === "grid" && loading && (
+        <div style={{ color: "var(--text-secondary)", fontSize: 13 }}>Loading vitals…</div>
+      )}
+      {tab === "grid" && !loading && patients.length === 0 && (
+        <div style={{ color: "var(--text-secondary)", fontSize: 13 }}>No patients found.</div>
+      )}
+      {tab === "grid" && !loading && (
         <div className="vm-grid">
           {patients.map((p) => {
             const ws = worstSeverity(p.vitals, thresholds);

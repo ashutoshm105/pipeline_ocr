@@ -7,13 +7,16 @@ Patient-owned / patient-scoped endpoints extracted verbatim from ``main.py``:
   GET/POST /api/patient/{patient_id}/medications (+ DELETE /api/medications/{id})
   GET/POST /api/vitals
   GET/POST /api/patient/{patient_id}/prescriptions | /api/prescriptions
+  GET/POST /api/patient/{patient_id}/refills | /api/refills (+ PUT /api/refills/{id}/status)
   GET/POST /api/patient/{patient_id}/notes | /api/notes
   GET/POST /api/appointments (+ PUT /api/appointments/{id})
   GET/POST /api/patient/{patient_id}/labs | /api/labs
+  GET      /api/lab-interpretation/{patient_id}
   GET/POST /api/patient/{patient_id}/diagnoses (+ DELETE /api/diagnoses/{id})
   GET/POST /api/patient/{patient_id}/referrals | /api/referrals (+ PUT /api/referrals/{id})
   GET/POST /api/patient/{patient_id}/invoices | /api/invoices (+ PUT /api/invoices/{id})
   GET/POST /api/patient/{patient_id}/insurance (+ DELETE /api/insurance/{id})
+  GET      /api/patient/{patient_id}/consents (+ POST /api/consents, PUT /api/consents/{id}/sign)
   GET      /api/patient/{patient_id}/export
   GET      /api/patient/{patient_id}/fhir
 """
@@ -26,11 +29,14 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
 
 from database import get_db
+from hepatology_kb import compute_flag, lookup_reference_range
 from schemas import (
     AllergyReq,
     AppointmentReq,
     ClinicalNoteReq,
     ConditionReq,
+    ConsentFormReq,
+    ConsentSignReq,
     DiagnosisCodeReq,
     InvoiceReq,
     InsuranceReq,
@@ -39,6 +45,7 @@ from schemas import (
     PatientProfileReq,
     PrescriptionReq,
     ReferralReq,
+    RefillReq,
     VitalReq,
 )
 
@@ -221,6 +228,54 @@ def create_prescription(req: PrescriptionReq):
     return {"id": pid}
 
 
+# ── Prescription Refills ─────────────────────────────────────
+
+@router.get("/api/patient/{patient_id}/refills")
+def list_patient_refills(patient_id: str):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM prescription_refills WHERE patient_id=? ORDER BY requested_at DESC", (patient_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.get("/api/refills")
+def list_refills(status: str = Query("")):
+    conn = get_db()
+    if status:
+        rows = conn.execute("SELECT * FROM prescription_refills WHERE status=? ORDER BY requested_at DESC", (status,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM prescription_refills ORDER BY requested_at DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/refills")
+def create_refill(req: RefillReq):
+    rid = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO prescription_refills (id, prescription_id, patient_id, status, requested_at, fulfilled_at, notes) VALUES (?,?,?,?,?,?,?)",
+        (rid, req.prescription_id, req.patient_id, "requested", now, "", req.notes),
+    )
+    conn.commit()
+    conn.close()
+    return {"id": rid}
+
+
+@router.put("/api/refills/{refill_id}/status")
+def update_refill_status(refill_id: str, status: str = Query(...)):
+    conn = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    if status in ("approved", "denied", "fulfilled"):
+        conn.execute("UPDATE prescription_refills SET status=?, fulfilled_at=? WHERE id=?", (status, now, refill_id))
+    else:
+        conn.execute("UPDATE prescription_refills SET status=? WHERE id=?", (status, refill_id))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
 # ── Clinical Notes (SOAP) ────────────────────────────────────
 
 @router.get("/api/patient/{patient_id}/notes")
@@ -313,6 +368,45 @@ def add_lab_result(req: LabResultReq):
     conn.commit()
     conn.close()
     return {"id": lid}
+
+
+@router.get("/api/lab-interpretation/{patient_id}")
+def get_lab_interpretation(patient_id: str):
+    """Return the patient's lab results flagged against the hepatology KB reference ranges."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM lab_results WHERE patient_id=? ORDER BY tested_at DESC", (patient_id,)
+    ).fetchall()
+    conn.close()
+
+    results = []
+    for row in rows:
+        r = dict(row)
+        ref = lookup_reference_range(r["test_name"])
+        if ref is not None:
+            reference_low = ref.low
+            reference_high = ref.high
+            unit = ref.unit or r.get("unit")
+        else:
+            reference_low = r.get("reference_low")
+            reference_high = r.get("reference_high")
+            unit = r.get("unit")
+        flag = compute_flag(r.get("value"), ref) if ref is not None else (r.get("status") or "UNKNOWN")
+        results.append({
+            **r,
+            "unit": unit,
+            "reference_low": reference_low,
+            "reference_high": reference_high,
+            "flag": flag,
+        })
+    return results
+
+
+@router.get("/api/test/lab-interpretation")
+def test_lab_interpretation():
+    """Lab interpretation for the seeded default patient — no auth token required."""
+    from routes.reports_routes import _default_patient_id
+    return get_lab_interpretation(_default_patient_id())
 
 
 # ── Diagnoses ─────────────────────────────────────────────────
@@ -447,6 +541,43 @@ def add_insurance(patient_id: str, req: InsuranceReq):
 def delete_insurance(insurance_id: str):
     conn = get_db()
     conn.execute("DELETE FROM insurance WHERE id=?", (insurance_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+# ── Consent Forms ────────────────────────────────────────────
+
+@router.get("/api/patient/{patient_id}/consents")
+def list_consents(patient_id: str):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM consent_forms WHERE patient_id=? ORDER BY created_at DESC", (patient_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/consents")
+def add_consent(req: ConsentFormReq):
+    cid = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO consent_forms (id, patient_id, form_type, title, content, signed, signed_at, signature, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        (cid, req.patient_id, req.form_type, req.title, req.content, 0, "", "", now),
+    )
+    conn.commit()
+    conn.close()
+    return {"id": cid}
+
+
+@router.put("/api/consents/{consent_id}/sign")
+def sign_consent(consent_id: str, req: ConsentSignReq):
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_db()
+    conn.execute(
+        "UPDATE consent_forms SET signed=1, signed_at=?, signature=? WHERE id=?",
+        (now, req.signature, consent_id),
+    )
     conn.commit()
     conn.close()
     return {"ok": True}

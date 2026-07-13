@@ -142,6 +142,16 @@ def init_db():
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS prescription_refills (
+            id TEXT PRIMARY KEY,
+            prescription_id TEXT REFERENCES prescriptions(id),
+            patient_id TEXT REFERENCES patients(id),
+            status TEXT DEFAULT 'requested',
+            requested_at TEXT,
+            fulfilled_at TEXT DEFAULT '',
+            notes TEXT DEFAULT ''
+        );
+
         CREATE TABLE IF NOT EXISTS clinical_notes (
             id TEXT PRIMARY KEY,
             patient_id TEXT NOT NULL REFERENCES patients(id),
@@ -233,6 +243,16 @@ def init_db():
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS education_resources (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            category TEXT DEFAULT '',
+            content TEXT DEFAULT '',
+            url TEXT DEFAULT '',
+            condition_tag TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS drug_interactions (
             id TEXT PRIMARY KEY,
             drug_a TEXT NOT NULL,
@@ -287,6 +307,18 @@ def init_db():
             relationship TEXT DEFAULT 'self',
             effective_date TEXT DEFAULT '',
             expiry_date TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS consent_forms (
+            id TEXT PRIMARY KEY,
+            patient_id TEXT NOT NULL REFERENCES patients(id),
+            form_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT DEFAULT '',
+            signed INTEGER DEFAULT 0,
+            signed_at TEXT DEFAULT '',
+            signature TEXT DEFAULT '',
             created_at TEXT NOT NULL
         );
     """)
@@ -352,6 +384,61 @@ def init_db():
         conn.execute(
             "INSERT OR IGNORE INTO icd10_codes (code, description, category) VALUES (?,?,?)",
             (code, desc, cat),
+        )
+
+    # Seed patient education library
+    now = datetime.now(timezone.utc).isoformat()
+    education = [
+        ("edu_diabetes", "Understanding Diabetes", "Chronic Conditions",
+         "Type 2 diabetes is a chronic condition affecting how your body metabolizes sugar (glucose). "
+         "Key management strategies include regular blood glucose monitoring, a balanced diet with "
+         "controlled carbohydrate intake, regular physical activity (150 min/week), medication "
+         "adherence as prescribed, regular A1C testing every 3 months, and annual eye, kidney, and "
+         "foot exams.", "", "diabetes"),
+        ("edu_hypertension", "Managing Hypertension", "Chronic Conditions",
+         "High blood pressure (hypertension) is often called the 'silent killer' because it usually "
+         "has no symptoms. Lifestyle modifications include reducing sodium intake, following a DASH "
+         "diet, regular exercise, maintaining a healthy weight, limiting alcohol, quitting smoking, "
+         "and managing stress.", "", "hypertension"),
+        ("edu_asthma", "Living with Asthma", "Chronic Conditions",
+         "Asthma is a chronic condition where airways narrow, swell, and produce extra mucus. Know "
+         "your triggers, use controller medications daily as prescribed, keep a rescue inhaler "
+         "accessible, monitor peak flow readings, and follow your Asthma Action Plan zones.",
+         "", "asthma"),
+        ("edu_screenings", "Recommended Screenings by Age", "Preventive Care",
+         "Regular health screenings detect problems early. Recommendations vary by age group for "
+         "blood pressure, cholesterol, dental, eye, diabetes, mammogram, colonoscopy, and bone "
+         "density screenings.", "", ""),
+        ("edu_vaccines", "Vaccination Schedule (Adults)", "Preventive Care",
+         "Stay up to date with recommended adult vaccines including influenza, Tdap/Td, shingles, "
+         "pneumococcal, COVID-19, hepatitis B, and HPV, plus travel vaccines as needed.",
+         "", ""),
+        ("edu_heart_diet", "Heart-Healthy Diet", "Nutrition & Diet",
+         "A heart-healthy diet can reduce your risk of heart disease. Favor fruits, vegetables, "
+         "whole grains, lean proteins, and healthy fats while limiting saturated fat, trans fat, "
+         "sodium, and added sugars.", "", "hypertension"),
+        ("edu_diabetic_meals", "Diabetic Meal Planning", "Nutrition & Diet",
+         "The plate method is a simple way to plan balanced meals: half non-starchy vegetables, a "
+         "quarter lean protein, a quarter carbohydrates/grains. Understanding carb counting and the "
+         "glycemic index helps keep blood sugar stable.", "", "diabetes"),
+        ("edu_depression", "Recognizing Depression", "Mental Health",
+         "Depression is more than feeling sad. Seek help if you experience 5+ symptoms for 2+ weeks, "
+         "including persistent low mood, loss of interest, appetite or sleep changes, fatigue, or "
+         "thoughts of self-harm. Treatment options include psychotherapy, medication, exercise, and "
+         "social support.", "", "depression"),
+        ("edu_stress", "Stress Management Techniques", "Mental Health",
+         "Chronic stress affects physical and mental health. Immediate relief techniques include deep "
+         "breathing and grounding exercises; daily practices like exercise, sleep, and social "
+         "connection build long-term resilience.", "", ""),
+        ("edu_med_adherence", "Medication Adherence", "Medication Safety",
+         "Taking medications as prescribed is crucial for treatment success. Use a pill organizer, "
+         "set reminders, keep a medication log, refill prescriptions early, and always tell your "
+         "doctor about all medications, supplements, and side effects.", "", ""),
+    ]
+    for eid, title, category, content, url, tag in education:
+        conn.execute(
+            "INSERT OR IGNORE INTO education_resources (id, title, category, content, url, condition_tag, created_at) VALUES (?,?,?,?,?,?,?)",
+            (eid, title, category, content, url, tag, now),
         )
 
     conn.commit()
