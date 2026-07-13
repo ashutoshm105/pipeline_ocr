@@ -94,6 +94,37 @@ def hub_test_provider(provider_id: str):
         return {"status": "ok", "message": f"No active test available for kind={kind}, engine={engine}"}
 
 
+@router.get("/api/hub/gateway")
+def hub_gateway_status():
+    """Returns the AI Gateway's current fallback chain — every configured AI
+    provider in the order it will be tried, default first."""
+    from services.ai_gateway import _load_ai_providers
+    providers = _load_ai_providers()
+    return {
+        "configured": len(providers),
+        "fallback_chain": [
+            {"id": p["id"], "name": p["name"], "engine": p["engine"], "is_default": bool(p.get("is_default"))}
+            for p in providers
+        ],
+    }
+
+
+@router.post("/api/hub/gateway/test")
+def hub_gateway_test():
+    """Runs a live prompt through the AI Gateway, exercising its automatic
+    fallback across every configured provider. Returns which provider answered."""
+    from services.ai_gateway import AIGatewayError, get_gateway, _load_ai_providers
+    providers = _load_ai_providers()
+    if not providers:
+        return {"status": "error", "message": "No AI provider configured."}
+    gateway = get_gateway()
+    try:
+        result = gateway.analyze("Say 'hello' in one word.", "", [])
+        return {"status": "ok", "response": result[:200], "chain_length": len(providers)}
+    except AIGatewayError as e:
+        return {"status": "error", "message": str(e)}
+
+
 @router.get("/api/hub/recommendations")
 def hub_recommendations():
     """Returns recommended providers based on available hardware (GPU/CPU)."""

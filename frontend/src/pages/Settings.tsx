@@ -42,6 +42,9 @@ export function Settings({ onBack, notify }: Props) {
   const [healthLoading, setHealthLoading] = useState(false);
   const [recommendations, setRecommendations] = useState<any>(null);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [gatewayChain, setGatewayChain] = useState<any>(null);
+  const [gatewayTestResult, setGatewayTestResult] = useState<any>(null);
+  const [gatewayLoading, setGatewayLoading] = useState(false);
 
   // Form state
   const [showForm, setShowForm] = useState<string | null>(null);
@@ -201,6 +204,30 @@ export function Settings({ onBack, notify }: Props) {
     }
   };
 
+  const handleGatewayRefresh = async () => {
+    setGatewayLoading(true);
+    try {
+      const g = await api.hubGatewayStatus();
+      setGatewayChain(g);
+    } catch (e: any) {
+      notify("Could not load AI Gateway chain: " + e.message, "error");
+    } finally {
+      setGatewayLoading(false);
+    }
+  };
+
+  const handleGatewayTest = async () => {
+    setGatewayLoading(true);
+    try {
+      const r = await api.hubGatewayTest();
+      setGatewayTestResult(r);
+    } catch (e: any) {
+      notify("Gateway test failed: " + e.message, "error");
+    } finally {
+      setGatewayLoading(false);
+    }
+  };
+
   const currentEngineFields = () => {
     if (!showForm) return [];
     const list = engineOptionsForKind(showForm);
@@ -275,6 +302,49 @@ export function Settings({ onBack, notify }: Props) {
       ) : tab === "system" ? (
         /* ── System Tab ──────────────────────────────────────────── */
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div className="neu" style={{ padding: 20, borderRadius: 12, border: "1px solid var(--primary)" }}>
+            <h3 style={{ margin: "0 0 4px", color: "var(--text)" }}>🧠 Unified AI Gateway</h3>
+            <p style={{ color: "var(--text-secondary)", margin: "0 0 12px", fontSize: 13 }}>
+              Every AI call in MedVault — report analysis, extraction, diagnosis, summary,
+              classification fallback — routes through this single gateway. It tries the default
+              provider first (local or cloud) and automatically falls back through every other
+              configured provider on failure, so the system stays up even if one model goes down.
+            </p>
+            <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+              <button className="neu-btn sm" onClick={handleGatewayRefresh} disabled={gatewayLoading}>
+                {gatewayLoading ? <span className="spinner" /> : "View Fallback Chain"}
+              </button>
+              <button className="neu-btn sm primary" onClick={handleGatewayTest} disabled={gatewayLoading}>
+                {gatewayLoading ? <span className="spinner white" /> : "Test Gateway"}
+              </button>
+            </div>
+            {gatewayChain && (
+              <div style={{ marginBottom: 10 }}>
+                {gatewayChain.configured === 0 ? (
+                  <span style={{ color: "var(--warning, #d97706)", fontSize: 13 }}>
+                    No AI provider configured yet — add one under AI Models.
+                  </span>
+                ) : (
+                  <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--text)" }}>
+                    {gatewayChain.fallback_chain.map((p: any, i: number) => (
+                      <li key={p.id} style={{ marginBottom: 4 }}>
+                        <strong>{p.name}</strong> ({p.engine}){p.is_default ? " — default" : ""}
+                        {i === 0 ? " · tried first" : " · fallback"}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            )}
+            {gatewayTestResult && (
+              <pre style={{
+                background: "var(--glass)", border: "1px solid var(--glass-border)",
+                borderRadius: 8, padding: 14, fontSize: 12, color: "var(--text)",
+                overflowX: "auto", maxHeight: 200,
+              }}>{JSON.stringify(gatewayTestResult, null, 2)}</pre>
+            )}
+          </div>
+
           <GpuStatusPanel />
 
           <div className="neu" style={{ padding: 20, borderRadius: 12 }}>

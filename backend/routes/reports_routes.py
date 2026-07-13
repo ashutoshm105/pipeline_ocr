@@ -21,7 +21,8 @@ from fastapi.responses import FileResponse
 from auth import decode_token
 from database import _get_provider_row, _migrate_reports_schema, get_db
 from schemas import AnalyzeReq, StructuredOCRReq
-from services.ai_service import MEDICAL_PROMPT, _extract_images, build_ai
+from services.ai_service import MEDICAL_PROMPT, _extract_images
+from services.ai_gateway import AIGatewayError, get_gateway, has_ai_provider
 from services.ocr_service import AutoOCRProvider, build_ocr
 
 router = APIRouter()
@@ -150,16 +151,10 @@ def analyze_report(req: AnalyzeReq):
     else:
         ocr = AutoOCRProvider()
 
-    ai_row = _get_provider_row(conn, req.ai_provider_id, "ai")
-    if ai_row:
-        ai_config = json.loads(ai_row["config"]) if isinstance(ai_row["config"], str) else ai_row["config"]
-        ai = build_ai(ai_row["engine"], ai_config)
-    elif req.api_key:
-        from services.ai_service import GeminiProvider
-        ai = GeminiProvider(api_key=req.api_key)
-    else:
+    if not has_ai_provider() and not req.api_key:
         conn.close()
-        raise HTTPException(400, "No AI provider configured. Add one in Settings or pass an api_key.")
+        raise HTTPException(400, "No AI provider configured. Add one in the Model Hub or pass an api_key.")
+    gateway = get_gateway(preferred_provider_id=req.ai_provider_id)
 
     try:
         ocr_text = ocr.extract_text(filepath, filetype)
@@ -167,7 +162,13 @@ def analyze_report(req: AnalyzeReq):
         structured = ocr.extract_structured(filepath, filetype) if hasattr(ocr, "extract_structured") else []
         ocr_engine = type(ocr).__name__
         images = _extract_images(filepath, filetype)
-        analysis = ai.analyze(MEDICAL_PROMPT, ocr_text, images)
+        try:
+            analysis = gateway.analyze(MEDICAL_PROMPT, ocr_text, images)
+        except AIGatewayError:
+            if not req.api_key:
+                raise
+            from services.ai_service import GeminiProvider
+            analysis = GeminiProvider(api_key=req.api_key).analyze(MEDICAL_PROMPT, ocr_text, images)
         conn.execute(
             "UPDATE reports SET ocr_text=?, structured_results=?, doc_type=?, ocr_engine=?, analysis=?, analyzed=1 WHERE id=?",
             (ocr_text, json.dumps(structured, ensure_ascii=False), doc_type, ocr_engine, analysis, req.report_id),

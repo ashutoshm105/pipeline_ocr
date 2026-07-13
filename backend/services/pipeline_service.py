@@ -26,6 +26,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from database import get_db, get_default_provider, _migrate_reports_schema
 from services.ocr_service import AutoOCRProvider, build_ocr
+from services.ai_gateway import get_gateway, has_ai_provider
 from loguru import logger
 
 
@@ -340,6 +341,17 @@ def run_pipeline(
     :returns: :class:`PipelineResult` (never raises for bad image / OCR errors —
         failures are recorded under ``metadata["errors"]``).
     """
+    # Auto-wire the unified AI Gateway when no explicit client was passed and at
+    # least one AI provider is configured. This is what powers LLM-assisted
+    # classification fallback, extraction, validation, diagnosis and summary
+    # from the single Model Hub provider registry (with automatic fallback
+    # across every configured provider) instead of requiring callers to
+    # thread an LLM client through manually.
+    if llm_client is None and has_ai_provider():
+        llm_client = get_gateway()
+    if diagnosis_client is None and has_ai_provider():
+        diagnosis_client = get_gateway()
+
     started = datetime.now(timezone.utc)
     state: Dict[str, Any] = {
         "image_input": image_input,

@@ -40,7 +40,7 @@ def client(monkeypatch):
                         lambda self, fp, ft: "fake ocr text")
     monkeypatch.setattr("services.ocr_service.AutoOCRProvider.extract_structured",
                         lambda self, fp, ft: [])
-    monkeypatch.setattr("routes.reports_routes.build_ai", lambda engine, config: _FakeAI())
+    monkeypatch.setattr("services.ai_gateway.build_ai", lambda engine, config: _FakeAI())
     monkeypatch.setattr("services.pipeline_service.process_report_automatic",
                         lambda rid: None)
     # Seed a default AI provider so the analyze route takes the build_ai path.

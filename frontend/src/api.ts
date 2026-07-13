@@ -243,3 +243,5 @@ export const hubHealth = () => request<any>("/hub/health");
 export const hubTest = (providerId: string) =>
   request<any>(`/hub/test/${providerId}`, { method: "POST" });
 export const hubRecommendations = () => request<any>("/hub/recommendations");
+export const hubGatewayStatus = () => request<any>("/hub/gateway");
+export const hubGatewayTest = () => request<any>("/hub/gateway/test", { method: "POST" });

@@ -100,14 +100,16 @@ Do NOT make a final diagnosis. Do NOT suggest specific treatments.
 class DiagnosisAgent:
     """Agent 6 — rule-based Hepatology diagnosis support with LLM enhancement."""
 
-    def __init__(self, llm_client=None, engine: str = "rule_based"):
+    def __init__(self, llm_client=None, engine: Optional[str] = None):
         """
         :param llm_client: pluggable client exposing
             ``complete(prompt: str, input: str) -> str``. If ``None`` the agent
             uses the deterministic rule-based engine and emits a WARNING.
-        :param engine: ``"rule_based"`` (default) or ``"llm_assisted"``.
-            When ``"llm_assisted"`` and ``llm_client`` is ``None``, falls back
-            to rule-based.
+        :param engine: ``None`` (default — governed by ``llm_client`` presence,
+            matching the original behaviour), ``"rule_based"`` (force
+            deterministic even if an ``llm_client`` was passed), or
+            ``"llm_assisted"`` (use ``llm_client``; falls back to rule-based
+            if none configured). Set from the ``diagnosis`` provider registry.
         """
         self.llm_client = llm_client
         self._engine = engine
@@ -116,11 +118,14 @@ class DiagnosisAgent:
 
     def run(self, lab_report: LabReport) -> DiagnosisResult:
         """Produce a :class:`DiagnosisResult` for ``lab_report``."""
-        if self._engine == "rule_based" or self.llm_client is None:
-            if self.llm_client is None and self._engine == "llm_assisted":
+        if self._engine == "rule_based":
+            logger.info("Diagnosis provider forces rule-based engine")
+            return self._rule_based(lab_report)
+        if self.llm_client is None:
+            if self._engine == "llm_assisted":
                 logger.warning("LLM-assisted diagnosis requested but no LLM client; using rule-based fallback")
             else:
-                logger.info("Using rule-based diagnosis engine")
+                logger.warning("No LLM client configured; using rule-based diagnosis engine")
             return self._rule_based(lab_report)
 
         try:
