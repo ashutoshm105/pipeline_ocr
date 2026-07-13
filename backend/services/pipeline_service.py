@@ -211,6 +211,7 @@ def _build_default_graph() -> PipelineGraph:
             state["preprocessed_image"]
         )
         state["doc_class"] = cls.doc_class
+        state["classify_confidence"] = getattr(cls, "confidence", 1.0)
         return {"classification": cls.to_dict() if hasattr(cls, "to_dict") else {
             "class": getattr(cls, "doc_class", "UNKNOWN"),
             "confidence": getattr(cls, "confidence", 0.0),
@@ -218,9 +219,30 @@ def _build_default_graph() -> PipelineGraph:
         }}
 
     def n_ocr(state):
-        from agents.ocr_router_agent import run_ocr
+        from agents.ocr_router_agent import run_ocr, ALT_DOC_CLASS
         ocr_prov = get_default_provider("ocr")
         doc_class = state.get("doc_class")
+
+        # Spec §4.3: when classification confidence < 0.70, run both the
+        # predicted OCR route AND the next-best fallback route, then keep
+        # whichever yields more extracted text (proxy for field completeness).
+        if state.get("classify_confidence", 1.0) < 0.70:
+            alt_class = ALT_DOC_CLASS.get(doc_class)
+            if alt_class:
+                try:
+                    primary = run_ocr(state["preprocessed_image"], doc_class, ocr_provider=ocr_prov)
+                    alt = run_ocr(state["preprocessed_image"], alt_class, ocr_provider=ocr_prov)
+                    primary_len = len(str(getattr(primary, "raw_output", "") or ""))
+                    alt_len = len(str(getattr(alt, "raw_output", "") or ""))
+                    ocr = alt if alt_len > primary_len else primary
+                    logger.info("Low-confidence dual-OCR fallback: kept {} ({} chars vs {} chars)",
+                                "alt" if ocr is alt else "primary", max(primary_len, alt_len),
+                                min(primary_len, alt_len))
+                    state["ocr_obj"] = ocr
+                    return {"ocr": ocr.to_dict() if hasattr(ocr, "to_dict") else {}}
+                except Exception as e:
+                    logger.warning("Dual-OCR fallback failed ({}); using single-route OCR", e)
+
         try:
             ocr = run_ocr(state["preprocessed_image"], doc_class, ocr_provider=ocr_prov)
         except Exception as e:  # noqa: BLE001 - fall back to PaddleOCR on vision failure

@@ -50,6 +50,17 @@ AGENT_FACTORIES: Dict[str, Callable[[], object]] = {
     "handwritten": _make_handwritten_agent,
 }
 
+# Spec §4.3 dual-engine fallback: when classifier confidence < 0.70, also try
+# this alternate route and keep whichever yields more extracted text.
+# PRINTED_TEXT <-> TABLE is the most common ambiguity (tables are dense
+# printed text); HANDWRITTEN has no close neighbour so it maps to PRINTED_TEXT
+# as a reasonable second opinion.
+ALT_DOC_CLASS: Dict[str, str] = {
+    "TABLE": "PRINTED_TEXT",
+    "PRINTED_TEXT": "TABLE",
+    "HANDWRITTEN": "PRINTED_TEXT",
+}
+
 
 def run_ocr(image: np.ndarray, doc_class: str, *, ocr_provider: dict | None = None) -> OCRResult:
     """

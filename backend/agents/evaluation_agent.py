@@ -30,12 +30,29 @@ from loguru import logger
 
 
 @dataclass
+class TableStructureReport:
+    """Row/column/header accuracy for TABLE-class documents (spec §12.2)."""
+
+    row_detection_accuracy: Optional[float] = None
+    column_alignment_accuracy: Optional[float] = None
+    header_mapping_accuracy: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "row_detection_accuracy": self.row_detection_accuracy,
+            "column_alignment_accuracy": self.column_alignment_accuracy,
+            "header_mapping_accuracy": self.header_mapping_accuracy,
+        }
+
+
+@dataclass
 class EvaluationReport:
     """Aggregated evaluation metrics for one (or many) pipeline runs."""
 
     cer: Optional[float] = None
     wer: Optional[float] = None
     field_accuracy: Optional[float] = None
+    table_structure: Optional[TableStructureReport] = None
     samples_evaluated: int = 0
     ocr_available: bool = True
     notes: List[str] = field(default_factory=list)
@@ -45,6 +62,7 @@ class EvaluationReport:
             "cer": self.cer,
             "wer": self.wer,
             "field_accuracy": self.field_accuracy,
+            "table_structure": self.table_structure.to_dict() if self.table_structure else None,
             "samples_evaluated": self.samples_evaluated,
             "ocr_available": self.ocr_available,
             "notes": list(self.notes),
@@ -138,6 +156,48 @@ class EvaluationAgent:
             except (TypeError, ValueError):
                 continue
         return matched / len(ground_truth)
+
+    def table_structure_accuracy(self, extracted_table: List[List[str]],
+                                  ground_truth_table: List[List[str]]) -> TableStructureReport:
+        """
+        Row/column/header accuracy for a TABLE-class document (spec §12.2).
+
+        :param extracted_table: 2-D grid from the OCR table route, row 0 = headers.
+        :param ground_truth_table: matching hand-annotated 2-D grid, same shape.
+        :returns: :class:`TableStructureReport`; ``None`` fields when
+            ``ground_truth_table`` is empty.
+        """
+        if not ground_truth_table:
+            return TableStructureReport()
+
+        gt_rows = len(ground_truth_table)
+        ex_rows = len(extracted_table)
+        row_detection_accuracy = min(ex_rows, gt_rows) / gt_rows if gt_rows else None
+
+        gt_header = ground_truth_table[0] if ground_truth_table else []
+        ex_header = extracted_table[0] if extracted_table else []
+        header_matches = sum(
+            1 for i, h in enumerate(gt_header)
+            if i < len(ex_header) and _normalise_test_key(ex_header[i]) == _normalise_test_key(h)
+        )
+        header_mapping_accuracy = header_matches / len(gt_header) if gt_header else None
+
+        col_matches = 0
+        col_total = 0
+        for r in range(1, min(gt_rows, ex_rows)):
+            gt_row = ground_truth_table[r]
+            ex_row = extracted_table[r] if r < len(extracted_table) else []
+            for c, gv in enumerate(gt_row):
+                col_total += 1
+                if c < len(ex_row) and _normalise_text(str(ex_row[c])) == _normalise_text(str(gv)):
+                    col_matches += 1
+        column_alignment_accuracy = col_matches / col_total if col_total else None
+
+        return TableStructureReport(
+            row_detection_accuracy=row_detection_accuracy,
+            column_alignment_accuracy=column_alignment_accuracy,
+            header_mapping_accuracy=header_mapping_accuracy,
+        )
 
     # ── Dataset-level OCR evaluation ─────────────────────────────
 

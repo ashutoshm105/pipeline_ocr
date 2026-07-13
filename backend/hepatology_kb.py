@@ -8,6 +8,7 @@ abbreviation so lookup is robust to either form. Ranges:
     Enzymes (U/L):      ALT 7-56, AST 10-40, ALP 44-147, GGT sex-specific
     Pigments (mg/dL):   T.Bil 0.2-1.2, D.Bil 0.0-0.3, I.Bil 0.2-0.9
     Proteins (g/dL):    Albumin 3.5-5.0, Total Protein 6.3-8.2, Globulin 2.0-3.5
+    A/G Ratio:          1.2-2.2 (unitless)
     Hb (g/dL):          13.5-17.5
     Coagulation:        PT 11-13.5 s, INR 0.8-1.2 (unitless)
     Ammonia (µmol/L):   15-45
@@ -55,6 +56,9 @@ _RANGES = {
     "total protein": (6.3, 8.2, "g/dL"),
     "tp": (6.3, 8.2, "g/dL"),
     "globulin": (2.0, 3.5, "g/dL"),
+    "a/g ratio": (1.2, 2.2, "unitless"),
+    "ag ratio": (1.2, 2.2, "unitless"),
+    "a g ratio": (1.2, 2.2, "unitless"),
     "hemoglobin": (13.5, 17.5, "g/dL"),
     "hb": (13.5, 17.5, "g/dL"),
     "prothrombin time": (11.0, 13.5, "seconds"),
