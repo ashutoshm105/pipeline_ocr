@@ -236,3 +236,10 @@ export const listEngines = () => request<{ ocr: EngineInfo[]; ai: EngineInfo[] }
 export const createProvider = (data: any) => jsonPost("/providers", data);
 export const updateProvider = (id: string, data: any) => jsonPut(`/providers/${id}`, data);
 export const deleteProvider = (id: string) => del(`/providers/${id}`);
+
+// ── Hub endpoints ──────────────────────────────────────────
+export const hubStatus = () => request<any>("/hub/status");
+export const hubHealth = () => request<any>("/hub/health");
+export const hubTest = (providerId: string) =>
+  request<any>(`/hub/test/${providerId}`, { method: "POST" });
+export const hubRecommendations = () => request<any>("/hub/recommendations");

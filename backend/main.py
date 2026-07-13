@@ -57,6 +57,7 @@ from routes.reports_routes import router as reports_router
 from routes.admin_routes import router as admin_router
 from routes.evaluation_routes import router as evaluation_router
 from routes.pipeline_routes import router as pipeline_router
+from routes.hub_routes import router as hub_router
 
 DEFAULT_PATIENT_ID: str | None = None
 
@@ -154,6 +155,7 @@ app.include_router(reports_router)
 app.include_router(admin_router)
 app.include_router(evaluation_router)
 app.include_router(pipeline_router)
+app.include_router(hub_router)
 
 
 # ── Health / readiness probes ──────────────────────────────────

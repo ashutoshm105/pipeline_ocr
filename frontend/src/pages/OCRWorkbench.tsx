@@ -1292,7 +1292,6 @@ export function OCRWorkbench({ onBack, notify }: Props) {
             style={{
               padding: "7px 16px",
               borderRadius: 8,
-              border: "none",
               cursor: "pointer",
               fontWeight: tab === t.key ? 700 : 400,
               fontSize: 13,

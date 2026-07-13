@@ -257,10 +257,9 @@ def list_providers():
 
 @router.post("/api/providers")
 def create_provider(req: ProviderReq):
-    if req.kind not in ("ocr", "ai"):
-        raise HTTPException(400, "kind must be 'ocr' or 'ai'")
-    if req.kind == "ocr" and req.engine not in ("pipeline", "auto"):
-        raise HTTPException(400, "Only the MedVault Dual Pipeline (pipeline/auto) is supported for OCR")
+    valid_kinds = ("ocr", "ai", "preprocessing", "diagnosis", "classifier")
+    if req.kind not in valid_kinds:
+        raise HTTPException(400, f"kind must be one of {valid_kinds}")
     pid = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     conn = get_db()
@@ -277,8 +276,6 @@ def create_provider(req: ProviderReq):
 
 @router.put("/api/providers/{provider_id}")
 def update_provider(provider_id: str, req: ProviderReq):
-    if req.kind == "ocr" and req.engine not in ("pipeline", "auto"):
-        raise HTTPException(400, "Only the MedVault Dual Pipeline (pipeline/auto) is supported for OCR")
     conn = get_db()
     if req.is_default:
         conn.execute("UPDATE providers SET is_default=0 WHERE kind=?", (req.kind,))
@@ -309,6 +306,35 @@ def list_engines():
                 {"key": "paddle_endpoint", "label": "Printed OCR URL", "placeholder": "http://127.0.0.1:8001/ocr", "required": False},
                 {"key": "qwen_server_url", "label": "Qwen VL URL", "placeholder": "http://127.0.0.1:8002/v1/chat/completions", "required": False},
             ]},
+            {"id": "auto", "name": "Auto (Classifier-routed Pipeline)", "fields": [
+                {"key": "class_weights", "label": "Classifier Weights Path", "placeholder": "optional", "required": False},
+            ]},
+            {"id": "tesseract", "name": "Tesseract OCR", "fields": [
+                {"key": "lang", "label": "Language", "placeholder": "eng", "required": False},
+                {"key": "config_str", "label": "Tesseract Config", "placeholder": "--psm 6", "required": False},
+            ]},
+            {"id": "easyocr", "name": "EasyOCR", "fields": [
+                {"key": "lang_list", "label": "Languages (JSON array)", "placeholder": '["en"]', "required": False},
+                {"key": "gpu", "label": "Use GPU", "placeholder": "true", "required": False},
+            ]},
+            {"id": "surya", "name": "Surya OCR", "fields": [
+                {"key": "langs", "label": "Languages (JSON array)", "placeholder": '["en"]', "required": False},
+            ]},
+            {"id": "paddleocr", "name": "PaddleOCR (Standalone)", "fields": [
+                {"key": "use_gpu", "label": "Use GPU", "placeholder": "true", "required": False},
+                {"key": "lang", "label": "Language", "placeholder": "en", "required": False},
+                {"key": "use_angle_cls", "label": "Angle Classification", "placeholder": "true", "required": False},
+            ]},
+            {"id": "qwen_vl", "name": "Qwen-VL (Standalone)", "fields": [
+                {"key": "model_id", "label": "Model ID", "placeholder": "Qwen/Qwen2.5-VL-3B-Instruct", "required": False},
+                {"key": "server_url", "label": "Server URL", "placeholder": "http://localhost:8002/v1/chat/completions", "required": False},
+                {"key": "device", "label": "Device", "placeholder": "cuda", "required": False},
+                {"key": "load_in_4bit", "label": "4-bit Quantization", "placeholder": "true", "required": False},
+            ]},
+            {"id": "doctr", "name": "docTR", "fields": [
+                {"key": "det_arch", "label": "Detection Architecture", "placeholder": "db_resnet50", "required": False},
+                {"key": "reco_arch", "label": "Recognition Architecture", "placeholder": "crnn_vgg16_bn", "required": False},
+            ]},
         ],
         "ai": [
             {"id": "gemini", "name": "Google Gemini", "fields": [
@@ -320,14 +346,70 @@ def list_engines():
                 {"key": "model", "label": "Model", "placeholder": "gpt-4o", "required": False},
                 {"key": "base_url", "label": "Base URL", "placeholder": "https://api.openai.com/v1", "required": False},
             ]},
+            {"id": "anthropic", "name": "Anthropic Claude", "fields": [
+                {"key": "api_key", "label": "API Key", "placeholder": "sk-ant-...", "required": True, "secret": True},
+                {"key": "model", "label": "Model", "placeholder": "claude-sonnet-4-20250514", "required": False},
+            ]},
+            {"id": "groq", "name": "Groq Cloud", "fields": [
+                {"key": "api_key", "label": "API Key", "placeholder": "gsk_...", "required": True, "secret": True},
+                {"key": "model", "label": "Model", "placeholder": "llama-3.3-70b-versatile", "required": False},
+                {"key": "base_url", "label": "Base URL", "placeholder": "https://api.groq.com/openai/v1", "required": False},
+            ]},
+            {"id": "together", "name": "Together AI", "fields": [
+                {"key": "api_key", "label": "API Key", "placeholder": "tog-...", "required": True, "secret": True},
+                {"key": "model", "label": "Model", "placeholder": "meta-llama/Llama-3-70b-chat-hf", "required": False},
+                {"key": "base_url", "label": "Base URL", "placeholder": "https://api.together.xyz/v1", "required": False},
+            ]},
+            {"id": "deepseek", "name": "DeepSeek", "fields": [
+                {"key": "api_key", "label": "API Key", "placeholder": "sk-...", "required": True, "secret": True},
+                {"key": "model", "label": "Model", "placeholder": "deepseek-chat", "required": False},
+                {"key": "base_url", "label": "Base URL", "placeholder": "https://api.deepseek.com/v1", "required": False},
+            ]},
             {"id": "ollama", "name": "Ollama (Local)", "fields": [
                 {"key": "model", "label": "Model", "placeholder": "llava", "required": False},
                 {"key": "base_url", "label": "Base URL", "placeholder": "http://localhost:11434", "required": False},
+            ]},
+            {"id": "llama_cpp", "name": "llama.cpp Server", "fields": [
+                {"key": "model", "label": "Model", "placeholder": "default", "required": False},
+                {"key": "base_url", "label": "Base URL", "placeholder": "http://localhost:8080/v1", "required": False},
+            ]},
+            {"id": "lmstudio", "name": "LM Studio", "fields": [
+                {"key": "model", "label": "Model", "placeholder": "default", "required": False},
+                {"key": "base_url", "label": "Base URL", "placeholder": "http://localhost:1234/v1", "required": False},
+            ]},
+            {"id": "vllm", "name": "vLLM Server", "fields": [
+                {"key": "model", "label": "Model", "placeholder": "default", "required": False},
+                {"key": "base_url", "label": "Base URL", "placeholder": "http://localhost:8000/v1", "required": False},
             ]},
             {"id": "custom_openai", "name": "Custom Endpoint (OpenAI-compatible)", "fields": [
                 {"key": "endpoint", "label": "Endpoint URL", "placeholder": "https://your-api.com/v1/chat/completions", "required": True},
                 {"key": "api_key", "label": "API Key", "placeholder": "optional", "required": False, "secret": True},
                 {"key": "model", "label": "Model", "placeholder": "optional", "required": False},
+            ]},
+        ],
+        "preprocessing": [
+            {"id": "default", "name": "Default Pipeline (EXIF + crop + enhance)", "fields": []},
+            {"id": "simple", "name": "Simple (Resize + Grayscale)", "fields": [
+                {"key": "max_width", "label": "Max Width (px)", "placeholder": "1920", "required": False},
+            ]},
+            {"id": "advanced", "name": "Advanced (EXIF + Perspective + Bilateral)", "fields": [
+                {"key": "bilateral_d", "label": "Bilateral Filter d", "placeholder": "9", "required": False},
+                {"key": "perspective_correction", "label": "Perspective Correction", "placeholder": "true", "required": False},
+            ]},
+        ],
+        "diagnosis": [
+            {"id": "rule_based", "name": "Rule-Based Heuristic Engine", "fields": []},
+            {"id": "llm_assisted", "name": "LLM-Assisted Diagnosis", "fields": [
+                {"key": "ai_provider_id", "label": "AI Provider ID (uses active default if empty)", "placeholder": "optional", "required": False},
+            ]},
+        ],
+        "classifier": [
+            {"id": "cnn", "name": "CNN Classifier", "fields": [
+                {"key": "weights_path", "label": "Weights Path", "placeholder": "auto-detect", "required": False},
+            ]},
+            {"id": "heuristic", "name": "Heuristic Classifier (Rule-Based)", "fields": []},
+            {"id": "auto", "name": "Auto (CNN + Heuristic Fallback)", "fields": [
+                {"key": "weights_path", "label": "Weights Path", "placeholder": "auto-detect", "required": False},
             ]},
         ],
     }

@@ -108,11 +108,46 @@ class CustomAIProvider(AIProvider):
         return data.get("response", data.get("text", str(data)))
 
 
+class AnthropicProvider(AIProvider):
+    """Claude via the anthropic SDK."""
+
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514"):
+        self.api_key = api_key
+        self.model_name = model
+
+    def analyze(self, prompt: str, text: str, images: list[bytes]) -> str:  # pragma: no cover - network
+        import anthropic  # lazy
+
+        client = anthropic.Anthropic(api_key=self.api_key)
+        content: list = [{"type": "text", "text": prompt}]
+        if text:
+            content.append({"type": "text", "text": f"\nExtracted text:\n{text}"})
+        for img in images[:5]:
+            b64 = base64.b64encode(img).decode()
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": b64},
+            })
+        resp = client.messages.create(
+            model=self.model_name,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": content}],
+        )
+        return resp.content[0].text
+
+
 AI_ENGINES = {
     "gemini": lambda cfg: GeminiProvider(api_key=cfg["api_key"], model=cfg.get("model", "gemini-2.0-flash")),
     "openai": lambda cfg: OpenAIProvider(api_key=cfg["api_key"], model=cfg.get("model", "gpt-4o"), base_url=cfg.get("base_url", "https://api.openai.com/v1")),
     "ollama": lambda cfg: OllamaProvider(model=cfg.get("model", "llava"), base_url=cfg.get("base_url", "http://localhost:11434")),
     "custom_openai": lambda cfg: CustomAIProvider(endpoint=cfg["endpoint"], api_key=cfg.get("api_key", ""), model=cfg.get("model", ""), headers=cfg.get("headers")),
+    "anthropic": lambda cfg: AnthropicProvider(api_key=cfg["api_key"], model=cfg.get("model", "claude-sonnet-4-20250514")),
+    "groq": lambda cfg: OpenAIProvider(api_key=cfg["api_key"], model=cfg.get("model", "llama-3.3-70b-versatile"), base_url=cfg.get("base_url", "https://api.groq.com/openai/v1")),
+    "together": lambda cfg: OpenAIProvider(api_key=cfg["api_key"], model=cfg.get("model", "meta-llama/Llama-3-70b-chat-hf"), base_url=cfg.get("base_url", "https://api.together.xyz/v1")),
+    "deepseek": lambda cfg: OpenAIProvider(api_key=cfg["api_key"], model=cfg.get("model", "deepseek-chat"), base_url=cfg.get("base_url", "https://api.deepseek.com/v1")),
+    "llama_cpp": lambda cfg: OpenAIProvider(api_key=cfg.get("api_key", "no-key"), model=cfg.get("model", "default"), base_url=cfg.get("base_url", "http://localhost:8080/v1")),
+    "lmstudio": lambda cfg: OpenAIProvider(api_key=cfg.get("api_key", "lm-studio"), model=cfg.get("model", "default"), base_url=cfg.get("base_url", "http://localhost:1234/v1")),
+    "vllm": lambda cfg: OpenAIProvider(api_key=cfg.get("api_key", "no-key"), model=cfg.get("model", "default"), base_url=cfg.get("base_url", "http://localhost:8000/v1")),
 }
 
 
