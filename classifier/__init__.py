@@ -1,0 +1,1 @@
+from classifier.heuristic_classifier import classify_document

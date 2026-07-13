@@ -1,0 +1,18 @@
+# MedVault v2.0 OCR Pipeline dependencies
+# Install with: pip install -r pipeline_requirements.txt
+opencv-python>=4.9.0.80
+Pillow>=10.3.0
+deskew>=1.5.0
+paddlepaddle>=2.6.1
+paddleocr>=2.7.3
+easyocr>=1.7.1
+pytesseract>=0.3.13
+surya-ocr>=0.6.0
+transformers>=4.41.0
+torch>=2.3.0
+openai>=1.30.0
+pydantic>=2.7.0
+numpy>=1.26.0
+pandas>=2.2.0
+python-dotenv>=1.0.1
+loguru>=0.7.2
