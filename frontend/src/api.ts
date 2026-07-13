@@ -232,7 +232,7 @@ export interface EngineInfo { id: string; name: string; fields: ProviderField[];
 export interface Provider { id: string; kind: string; name: string; engine: string; config: Record<string, string>; is_default: number; created_at: string; }
 
 export const listProviders = () => request<Provider[]>("/providers");
-export const listEngines = () => request<{ ocr: EngineInfo[]; ai: EngineInfo[] }>("/providers/engines");
+export const listEngines = () => request<{ ocr: EngineInfo[]; ai: EngineInfo[]; preprocessing: EngineInfo[]; diagnosis: EngineInfo[]; classifier: EngineInfo[] }>("/providers/engines");
 export const createProvider = (data: any) => jsonPost("/providers", data);
 export const updateProvider = (id: string, data: any) => jsonPut(`/providers/${id}`, data);
 export const deleteProvider = (id: string) => del(`/providers/${id}`);

@@ -24,8 +24,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-from database import get_db, _migrate_reports_schema
-from services.ocr_service import AutoOCRProvider
+from database import get_db, get_default_provider, _migrate_reports_schema
+from services.ocr_service import AutoOCRProvider, build_ocr
 from loguru import logger
 
 
@@ -46,7 +46,11 @@ def process_report_automatic(report_id: str):
     filepath = row["filepath"]
     filetype = row["filetype"]
 
-    ocr = AutoOCRProvider()
+    ocr_prov = get_default_provider("ocr")
+    if ocr_prov:
+        ocr = build_ocr(ocr_prov["engine"], ocr_prov.get("config", {}))
+    else:
+        ocr = AutoOCRProvider()
 
     started = _dt.now(timezone.utc)
     conn.execute(
@@ -176,14 +180,33 @@ def _build_default_graph() -> PipelineGraph:
 
     def n_preprocess(state):
         from agents.preprocessing_agent import PreprocessingAgent
-        result = PreprocessingAgent().run(state["image_input"])
+        pre_prov = get_default_provider("preprocessing")
+        pre_cfg = pre_prov.get("config", {}) if pre_prov else {}
+        pre_engine = pre_prov.get("engine", "default") if pre_prov else "default"
+        kwargs = {}
+        if pre_engine == "simple":
+            kwargs["do_deskew"] = False
+            kwargs["do_denoise"] = False
+            if pre_cfg.get("max_width"):
+                kwargs["target_max_dim"] = int(pre_cfg["max_width"])
+        elif pre_engine == "advanced":
+            kwargs["do_deskew"] = True
+            kwargs["do_denoise"] = True
+        result = PreprocessingAgent(**kwargs).run(state["image_input"])
         state["preprocessed_image"] = result.preprocessed_image
         return {"preprocessing": result.to_dict()}
 
     def n_classify(state):
-        from document_classifier import ClassificationResult
         from agents.classification_agent import ClassificationAgent
-        cls = ClassificationAgent(llm_client=state.get("llm_client")).run(
+        cls_prov = get_default_provider("classifier")
+        cls_cfg = cls_prov.get("config", {}) if cls_prov else {}
+        cls_engine = cls_prov.get("engine", "auto") if cls_prov else "auto"
+        kwargs = {"llm_client": state.get("llm_client")}
+        if cls_engine == "heuristic":
+            kwargs["weights_path"] = "__skip__"
+        elif cls_cfg.get("weights_path"):
+            kwargs["weights_path"] = cls_cfg["weights_path"]
+        cls = ClassificationAgent(**kwargs).run(
             state["preprocessed_image"]
         )
         state["doc_class"] = cls.doc_class
@@ -195,9 +218,10 @@ def _build_default_graph() -> PipelineGraph:
 
     def n_ocr(state):
         from agents.ocr_router_agent import run_ocr
+        ocr_prov = get_default_provider("ocr")
         doc_class = state.get("doc_class")
         try:
-            ocr = run_ocr(state["preprocessed_image"], doc_class)
+            ocr = run_ocr(state["preprocessed_image"], doc_class, ocr_provider=ocr_prov)
         except Exception as e:  # noqa: BLE001 - fall back to PaddleOCR on vision failure
             # Handwritten OCR (Qwen-VL) fails when the vision model is
             # misconfigured / text-only / unavailable. Re-run with PRINTED_TEXT
@@ -227,7 +251,9 @@ def _build_default_graph() -> PipelineGraph:
 
     def n_diagnose(state):
         from agents.diagnosis_agent import DiagnosisAgent
-        dx = DiagnosisAgent(llm_client=state.get("diagnosis_client")).run(state["lab_report_obj"])
+        dx_prov = get_default_provider("diagnosis")
+        dx_engine = dx_prov.get("engine", "rule_based") if dx_prov else "rule_based"
+        dx = DiagnosisAgent(llm_client=state.get("diagnosis_client"), engine=dx_engine).run(state["lab_report_obj"])
         state["diagnosis_obj"] = dx
         return {"diagnosis": dx.model_dump()}
 
@@ -373,8 +399,17 @@ def _run_sequential(state: Dict[str, Any], *, summary: bool, evaluate: bool) -> 
 
     errors: Dict[str, Any] = {}
 
+    pre_prov = get_default_provider("preprocessing")
+    pre_cfg = pre_prov.get("config", {}) if pre_prov else {}
+    pre_engine = pre_prov.get("engine", "default") if pre_prov else "default"
+    pre_kwargs = {}
+    if pre_engine == "simple":
+        pre_kwargs["do_deskew"] = False
+        pre_kwargs["do_denoise"] = False
+        if pre_cfg.get("max_width"):
+            pre_kwargs["target_max_dim"] = int(pre_cfg["max_width"])
     try:
-        pre = PreprocessingAgent().run(state["image_input"])
+        pre = PreprocessingAgent(**pre_kwargs).run(state["image_input"])
         state["preprocessed_image"] = pre.preprocessed_image
         preprocessing = pre.to_dict()
     except Exception as e:
@@ -391,11 +426,10 @@ def _run_sequential(state: Dict[str, Any], *, summary: bool, evaluate: bool) -> 
         return {"preprocessing": preprocessing, "metadata": {"errors": errors}}
 
     try:
-        ocr = run_ocr(state["preprocessed_image"], state["doc_class"])
+        seq_ocr_prov = get_default_provider("ocr")
+        ocr = run_ocr(state["preprocessed_image"], state["doc_class"], ocr_provider=seq_ocr_prov)
         state["ocr_obj"] = ocr
     except Exception as e:
-        # Handwritten OCR (Qwen-VL) failed (text-only/misconfigured model):
-        # fall back to PaddleOCR (printed path) instead of aborting the run.
         if state.get("doc_class") in ("HANDWRITTEN", "handwritten"):
             logger.warning("Handwritten OCR failed ({}); falling back to PaddleOCR", e)
             try:
@@ -422,7 +456,9 @@ def _run_sequential(state: Dict[str, Any], *, summary: bool, evaluate: bool) -> 
                 "metadata": {"errors": errors}}
 
     try:
-        dx = DiagnosisAgent(llm_client=state.get("diagnosis_client")).run(state["lab_report_obj"])
+        dx_prov = get_default_provider("diagnosis")
+        dx_engine = dx_prov.get("engine", "rule_based") if dx_prov else "rule_based"
+        dx = DiagnosisAgent(llm_client=state.get("diagnosis_client"), engine=dx_engine).run(state["lab_report_obj"])
         state["diagnosis_obj"] = dx
         diagnosis = dx.model_dump()
     except Exception as e:

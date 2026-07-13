@@ -404,3 +404,16 @@ def _get_provider_row(conn: sqlite3.Connection, provider_id: str, kind: str) -> 
     if row:
         return dict(row)
     return {}
+
+
+def get_default_provider(kind: str) -> dict:
+    """Return the default provider row for a kind, or {} if none set."""
+    conn = get_db()
+    row = conn.execute("SELECT * FROM providers WHERE kind=? AND is_default=1", (kind,)).fetchone()
+    conn.close()
+    if row:
+        d = dict(row)
+        import json as _json
+        d["config"] = _json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]
+        return d
+    return {}

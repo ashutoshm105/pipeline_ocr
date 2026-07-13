@@ -32,7 +32,7 @@ const KIND_TO_TAB: Record<string, HubTab> = {
 
 export function Settings({ onBack, notify }: Props) {
   const [providers, setProviders] = useState<api.Provider[]>([]);
-  const [engines, setEngines] = useState<{ ocr: api.EngineInfo[]; ai: api.EngineInfo[] }>({ ocr: [], ai: [] });
+  const [engines, setEngines] = useState<{ ocr: api.EngineInfo[]; ai: api.EngineInfo[]; preprocessing: api.EngineInfo[]; diagnosis: api.EngineInfo[]; classifier: api.EngineInfo[] }>({ ocr: [], ai: [], preprocessing: [], diagnosis: [], classifier: [] });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<HubTab>("ocr");
 
@@ -94,8 +94,10 @@ export function Settings({ onBack, notify }: Props) {
   const engineOptionsForKind = (kind: string): api.EngineInfo[] => {
     if (kind === "ocr") return engines.ocr;
     if (kind === "ai") return engines.ai;
-    // For other kinds, return combined or empty
-    return [...engines.ocr, ...engines.ai];
+    if (kind === "preprocessing") return engines.preprocessing || [];
+    if (kind === "diagnosis") return engines.diagnosis || [];
+    if (kind === "classifier") return engines.classifier || [];
+    return [];
   };
 
   const openAdd = (kind: string) => {

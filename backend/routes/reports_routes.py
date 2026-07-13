@@ -22,7 +22,7 @@ from auth import decode_token
 from database import _get_provider_row, _migrate_reports_schema, get_db
 from schemas import AnalyzeReq, StructuredOCRReq
 from services.ai_service import MEDICAL_PROMPT, _extract_images, build_ai
-from services.ocr_service import AutoOCRProvider
+from services.ocr_service import AutoOCRProvider, build_ocr
 
 router = APIRouter()
 
@@ -143,7 +143,12 @@ def analyze_report(req: AnalyzeReq):
     filepath = row["filepath"]
     filetype = row["filetype"]
 
-    ocr = AutoOCRProvider()
+    ocr_row = _get_provider_row(conn, req.ocr_provider_id, "ocr")
+    if ocr_row:
+        ocr_config = json.loads(ocr_row["config"]) if isinstance(ocr_row["config"], str) else ocr_row["config"]
+        ocr = build_ocr(ocr_row["engine"], ocr_config)
+    else:
+        ocr = AutoOCRProvider()
 
     ai_row = _get_provider_row(conn, req.ai_provider_id, "ai")
     if ai_row:
@@ -202,7 +207,12 @@ def ocr_structured_report(req: StructuredOCRReq):
     filepath = row["filepath"]
     filetype = row["filetype"]
 
-    ocr = AutoOCRProvider()
+    ocr_row = _get_provider_row(conn, "", "ocr")
+    if ocr_row:
+        ocr_config = json.loads(ocr_row["config"]) if isinstance(ocr_row["config"], str) else ocr_row["config"]
+        ocr = build_ocr(ocr_row["engine"], ocr_config)
+    else:
+        ocr = AutoOCRProvider()
 
     try:
         ocr_text = ocr.extract_text(filepath, filetype)

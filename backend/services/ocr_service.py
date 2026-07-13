@@ -246,10 +246,10 @@ class AutoOCRProvider(OCRProvider):
             return self._heuristic_structured(text)
         return []
 
-    def _heuristic_structured(self, text: str) -> list:  # pragma: no cover - latent bug: RULES_CONFIG undefined
+    def _heuristic_structured(self, text: str) -> list:
         """Fallback structured extraction using simple regex heuristics on plain text."""
-        import re
         from heuristics import extract_structured_results
+        from paddle_ocr_provider import RULES_CONFIG
         lines = [{"text": line, "bounding_box": []} for line in text.split("\n") if line.strip()]
         return extract_structured_results(lines, RULES_CONFIG)
 
